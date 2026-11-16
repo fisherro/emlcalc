@@ -8,6 +8,7 @@
 #include <istream>
 #include <optional>
 #include <ostream>
+#include <span>
 #include <sstream>
 #include <stack>
 #include <stdexcept>
@@ -31,7 +32,25 @@ std::unordered_map<std::string, std::string> the_macros;
 
 std::unordered_map<std::string, std::function<void(number_stack&)>> the_built_ins;
 
-void throw_string(std::string message)
+enum class word_class { unknown, number, built_in, macro };
+
+struct options_type {
+    bool expand{false};
+};
+
+options_type parse_options(std::span<const std::string_view> args)
+{
+    options_type options;
+    for (auto& arg: args) {
+        if ("--expand" == arg) {
+            options.expand = true;
+        }
+    }
+    //TODO: Catch unknown options
+    return options;
+}
+
+[[noreturn]] void throw_string(std::string message)
 {
     throw std::runtime_error{message};
 }
@@ -86,6 +105,16 @@ std::optional<number_type> parse_number(const std::string& s)
     return std::nullopt;
 }
 
+std::pair<word_class, number_type> classify(const std::string& word)
+{
+    if (auto maybe_number{parse_number(word)}; maybe_number) {
+        return std::make_pair(word_class::number, *maybe_number);
+    }
+    if (the_built_ins.contains(word)) return std::make_pair(word_class::built_in, 0);
+    if (the_macros.contains(word)) return std::make_pair(word_class::macro, 0);
+    return std::make_pair(word_class::unknown, 0);
+}
+
 auto pop(auto& the_stack)
 {
     if (the_stack.empty()) throw_string("Tried to pop an empty stack.");
@@ -125,14 +154,12 @@ void initialize_built_ins()
 
 std::optional<std::string> find_undefined_macro(const std::string& body)
 {
+    //TODO: Use ranges to split words instead?
     std::istringstream stream{body};
     std::string token;
     while (stream >> token) {
-        if (parse_number(token)) continue;
-        if (the_built_ins.contains(token)) continue;
-        if (not the_macros.contains(token)) {
-            return token;
-        }
+        auto [klass, _] = classify(token);
+        if (word_class::unknown == klass) return token;
     }
     return std::nullopt;
 }
@@ -152,14 +179,19 @@ void read_library()
         if (name.empty()) {
             throw_string("A macro name cannot be empty");
         }
-        if (parse_number(name)) {
-            throw_string(std::format("{}: A macro name cannot be a number", name));
-        }
-        if (the_built_ins.contains(name)) {
-            throw_string(std::format("{} is a built-in and cannot be a macro", name));
-        }
-        if (the_macros.contains(name)) {
-            throw_string(std::format("Duplicate macros are not allowed ({})", name));
+        auto [klass, _] = classify(name);
+        switch (klass) {
+            case word_class::number:
+                throw_string(std::format("{}: A macro name cannot be a number", name));
+                break;
+            case word_class::built_in:
+                throw_string(std::format("{} is a built-in and cannot be a macro", name));
+                break;
+            case word_class::macro:
+                throw_string(std::format("Duplicate macros are not allowed ({})", name));
+                break;
+            case word_class::unknown:
+                break;
         }
         auto value{line.substr(colon + 1)};
         if (auto undefined{find_undefined_macro(value)}; undefined) {
@@ -169,47 +201,85 @@ void read_library()
     }
 }
 
-void evaluate(std::istream& in, number_stack& the_stack)
+// Calls on_word for each number and built-in found in the stream replacing macros with their expansion.
+void expand(std::istream& in, auto&& on_word)
 {
-    std::string token;
-    while (in >> token) {
-        if (auto maybe_number{parse_number(token)}; maybe_number) {
-            //TODO: Only accept 1?
-            the_stack.push(*maybe_number);
-            continue;
+    std::string word;
+    while (in >> word) {
+        auto [klass, _] = classify(word);
+        switch (klass) {
+            case word_class::number:
+                [[fallthrough]];
+            case word_class::built_in:
+                on_word(word);
+                break;
+            case word_class::macro:
+                {
+                    std::istringstream body{the_macros.at(word)};
+                    expand(body, on_word);
+                }
+                break;
+            case word_class::unknown:
+                throw_string(std::format("Unknown macro: {}", word));
+                break;
         }
-        if (auto built_in_iter{the_built_ins.find(token)}; the_built_ins.end() != built_in_iter) {
-            (built_in_iter->second)(the_stack);
-            continue;
-        }
-        if (auto macro_iter{the_macros.find(token)}; the_macros.end() != macro_iter) {
-            std::istringstream macro_stream{macro_iter->second};
-            evaluate(macro_stream, the_stack);
-            continue;
-        }
-        throw_string(std::format("Unknown macro: {}", token));
     }
 }
+
+void evaluate(const std::string& word, number_stack& the_stack)
+{
+    // We could have expand pass the parsed number in the number case.
+    // For now, we'll leave it like this. Eventually this function should only see 1.
+    auto [klass, number] = classify(word);
+    switch (klass) {
+        case word_class::number:
+            //TODO: Only accept 1?
+            the_stack.push(number);
+            break;
+        case word_class::built_in:
+            the_built_ins.at(word)(the_stack);
+            break;
+        case word_class::macro:
+            [[fallthrough]];
+        case word_class::unknown:
+            throw std::logic_error(std::format("Evaluate was given \"{}\"", word));
+            break;
+    }
+}
+
 } // end of anonymous namespace
 
-int main()
+int main(int argc, char** argv)
 {
     try {
+        auto args{std::vector<std::string_view>(argv + 1, argv + argc)};
+        auto options{parse_options(args)};
         initialize_built_ins();
         read_library();
         number_stack the_stack;
-        evaluate(std::cin, the_stack);
-        if (1 != the_stack.size()) {
-            if (the_stack.empty()) {
-                std::cerr << "ERROR: Empty stack\n";
-            } else {
-                std::cerr << "ERROR: Too many values on the stack\n";
-                print_stack(std::cerr, the_stack);
+
+        if (options.expand) {
+            bool first{true};
+            expand(std::cin, [&first](const std::string& word)
+                    {
+                        if (not std::exchange(first, false)) std::cout << ' ';
+                        std::cout << word;
+                    });
+            std::cout << '\n';
+        } else {
+            expand(std::cin, [&the_stack](const std::string& word){ evaluate(word, the_stack); });
+            if (1 != the_stack.size()) {
+                if (the_stack.empty()) {
+                    std::cerr << "ERROR: Empty stack\n";
+                } else {
+                    std::cerr << "ERROR: Too many values on the stack\n";
+                    print_stack(std::cerr, the_stack);
+                }
+                return EXIT_FAILURE;
             }
-            return EXIT_FAILURE;
+            print_number(std::cout, the_stack.top());
+            std::cout << '\n';
         }
-        print_number(std::cout, the_stack.top());
-        std::cout << '\n';
         return EXIT_SUCCESS;
     } catch (std::exception& e) {
         std::cerr << "EXCEPTION: " << e.what() << '\n';
