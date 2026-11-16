@@ -1,0 +1,36 @@
+#  x * y = exp(ln(x) + ln(y))
+#  x / y = exp(ln(x) - ln(y))
+#  x ^ y = exp(y * ln(x))
+#  root(x, y) = y^(1/x) e.g. sqrt(x) = root(2, x) = x^(1/2)
+#  i = sqrt(-1)
+#  e = exp(1)
+#  pi = -i * ln(-1)
+#  cos(x) = (exp(i * x) + exp(-i * x))/2
+#  tan(x) = sin(x) / cos(x)
+#  arccos(x) = -i * ln(y + (i * sqrt(1 - (y^2))))
+#  
+# Two button calculator:
+#  1
+#  eml(x,y) = exp(x) - ln(y)
+#  exp(x)   = eml(x, 1)
+#  ln(x)    = eml(1, exp(eml(1, x)))
+#  x - y    = eml(ln(x), exp(y))
+
+exp: 1 eml
+ln: 1 swap 1 swap eml exp eml
+-: swap ln swap exp eml
+neg: 1 ln swap -
++: neg -
+*: ln swap ln + exp
+/: ln swap ln swap - exp
+^: swap ln * exp
+sq: dup *
+inv: 1 swap /
+root: swap inv ^
+sqrt: 1 1 + swap root
+i: 1 neg sqrt
+e: 1 exp
+pi: i neg 1 neg ln *
+cos: dup i * exp swap i neg * exp + 1 1 + /
+sin: dup i * exp swap i neg * exp - 1 1 + i * /
+tan: dup sin swap cos /
