@@ -24,6 +24,20 @@ sign: dup sq sqrt /
 # only works for reals
 abs: sq sqrt
 
+# These Boolean functions only work with 0 and 1
+not: 1 swap -
+and: *
+or: over over * - +
+xor: - sq
+nand: and not
+# Implication
+->: not * not
+
+half: 2 /
+sigma: neg exp 1 + inv
+avg: + 2 /
+hypot: sq swap sq + sqrt
+
 # deg/180 = rad/pi
 # (deg * pi)/180 = rad
 # (rad * 180)/pi = deg

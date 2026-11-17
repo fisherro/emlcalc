@@ -207,6 +207,37 @@ For large inputs, `sinh` and `cosh` pass a large number through several layers o
 | `0 sign` | 0 | −1 |
 | `0 abs` | infinity | 3.2 × 10⁻⁵⁰ |
 
+### `half`, `sigma`, `avg` and `hypot`
+
+**`half`** has no limits of its own.
+
+**`sigma`** computes 1 / (1 + e⁻ˣ) and has no `+` or `-` limits. `neg` puts x through `-` as the second argument, so −x can come out off by a multiple of 2πi, or as −infinity. Neither matters, because `exp` comes next: exp(z + 2πi) = exp(z), and exp(−infinity) = 0. `800 sigma` gives 1 and `-800 sigma` gives 0, both correct to double precision, and `(0,3.2) sigma` matches `cmath`.
+
+**`avg`** computes (x + y) / 2, so y goes through `+` as the second argument and has the [`+` limits](#subtraction-and-addition):
+
+| Input | Result | Correct |
+|---|---|---|
+| `(1,2) (3,4) avg` | 2 − 0.141593i | 2 + 3i |
+| `1 (0,3.5) avg` | 0.5 − 1.39159i | 0.5 + 1.75i |
+| `1 800 avg` (std) | infinity | 400.5 |
+
+**`hypot`** computes √(x² + y²). x² goes through `+` as the second argument, so the `+` limits apply to x², which makes them much tighter:
+
+- **In the std build, |x| must be below about 26.6,** where x² reaches 709.78. `26 1 hypot` gives 26.0192, but `27 1 hypot` gives infinity. y has no such limit: `1 27 hypot` gives 27.0185, and `1 1000 hypot` gives 1000. The Boost build has no such limit for either argument.
+- **For complex x, the imaginary part of x² must be between −π and π.** `(2,1) 1 hypot` gives 2.07434 − 0.550341i instead of 2.19737 + 0.91018i.
+- **Overflow:** x² or y² above about 1.8 × 10³⁰⁸ is infinity, so `1e200 1e200 hypot` gives infinity in the std build and NaN in Boost.
+- **Zero:** `0 0 hypot` is `0 sqrt`, which gives infinity in the std build (see [Zero](#zero)).
+- **Complex inputs:** `hypot` computes √(x² + y²) for complex x and y, as Python's `cmath` would. It isn't the size of a complex number (see [`sign` and `abs`](#sign-and-abs)): `1 (0,1) hypot` should be 0, since 1 + i² = 0. It gives 7.8 × 10⁻⁹ − 7.8 × 10⁻⁹ i, because the square root of a tiny rounding error is much larger than the error.
+
+No version without a conditional avoids all of these. Writing it as |x| · √((y/x)² + 1), so that only 1 goes through `+`, removes the 26.6 limit but fails when x is 0. `std::hypot` avoids both by dividing by whichever argument is larger, which needs a conditional.
+
+### Boolean macros
+
+`not`, `and`, `or`, `xor`, `nand` and `->` are arithmetic formulas that give the right truth table for 0 and 1: 1 − x, xy, x + y − xy, (x − y)², 1 − xy and 1 − x(1 − y). The `+` and `-` limits don't apply, because only 0, 1 or values close to them pass through.
+
+- **Other inputs aren't rejected.** The formulas just compute numbers: `2 2 and` gives 4, `2 3 or` gives −1, and `0.5 not` gives 0.5.
+- **In the Boost build, results aren't exactly 0 or 1,** for the same reason that `0` isn't exact (see [Number expansion](#number-expansion)). The leftover grows slowly as operations are chained: `1 1 nand` gives 1.3 × 10⁻⁵⁰, and `1 1 nand not not not not` gives 6.1 × 10⁻⁵⁰. In the std build these are exactly 0.
+
 ### `log` and `log10`
 
 `b x log` computes ln x / ln b, and `log10` is `10 swap log`. Away from the two problem inputs below, they match Python's `cmath`, including negative and complex inputs: `-100 log10` gives 2 + 1.36438i.
