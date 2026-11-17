@@ -248,7 +248,14 @@ calc_approx '9 sqrt'    '3'
 # root takes the index first: "3 8 root" is the cube root of 8.
 calc_approx '3 8 root'  '2'
 calc_approx '50 %'      '0.5'
-calc_approx '1000 log'  '3'
+# log takes the base first: "2 8 log" is log base 2 of 8.
+calc_approx '2 8 log'       '3'
+calc_approx '10 1000 log'   '3'
+calc_approx '1000 log10'    '3'
+calc_approx '0.001 log10'   '-3'
+calc_approx '-100 log10'    '(2,1.36438)'
+calc_approx '(3,4) log10'   '(0.69897,0.402719)'
+calc_approx '2 (0,1) log'   '(0,2.26618)'
 # sign and abs are for real numbers.
 calc_approx '-5 sign'   '-1'
 calc_approx '5 sign'    '1'

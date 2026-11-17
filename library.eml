@@ -15,7 +15,9 @@ i: 1 neg sqrt
 e: 1 exp
 pi: i neg 1 neg ln *
 %: 100 /
-log: ln 10 ln /
+# `10 100 log` is the base-10 log of 100
+log: ln swap ln /
+log10: 10 swap log
 
 # only works for reals; is csgn for complex
 sign: dup sq sqrt /

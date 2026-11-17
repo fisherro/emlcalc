@@ -207,6 +207,18 @@ For large inputs, `sinh` and `cosh` pass a large number through several layers o
 | `0 sign` | 0 | −1 |
 | `0 abs` | infinity | 3.2 × 10⁻⁵⁰ |
 
+### `log` and `log10`
+
+`b x log` computes ln x / ln b, and `log10` is `10 swap log`. Away from the two problem inputs below, they match Python's `cmath`, including negative and complex inputs: `-100 log10` gives 2 + 1.36438i.
+
+| Input | std | Boost | Correct |
+|---|---|---|---|
+| `0 log10` | infinity | −49.4939 + 1.36438i | −infinity |
+| `1 10 log` | infinity | −7.2 × 10⁴⁹ − 0.31i | undefined (base 1) |
+
+- **`0 log10`** has the wrong sign in the std build. `/` works on logarithms, and ln(−infinity) is infinity + iπ. `exp` of that comes back as +infinity, so the sign is lost. Any division of −infinity has the same problem: `0 ln 2 /` gives infinity. In the Boost build, `0` is built as −3.2 × 10⁻⁵⁰ (see [Number expansion](#number-expansion)), so the result is the logarithm of a tiny negative number.
+- **Base 1** divides by ln 1 = 0. In the Boost build ln 1 isn't exactly 0, so the result is a huge finite number.
+
 ### `wrap360`
 
 `wrap360` brings an angle in degrees into [0, 360) without a conditional. It uses the wraparound of `ln` on purpose: it converts 180 − d to radians, computes ln(e^(iθ)) / i, which `ln` wraps into (−π, π], and converts back.
