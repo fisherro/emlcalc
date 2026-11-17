@@ -37,19 +37,70 @@ std::unordered_map<std::string, std::function<void(number_stack&)>> the_built_in
 
 enum class word_class { unknown, number, built_in, macro };
 
+constexpr int EXIT_USAGE{2};
+
 struct options_type {
+    std::vector<std::string_view> files;
+    bool strict{false};
     bool expand{false};
+    std::string library;
 };
+
+struct usage_error: std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+
+const std::string help_text =
+R"(Usage: eml [--strict] [--expand] [--library <file>] [<file> ...]
+Reads an RPN expression from standard input or given files.
+  -s, --strict  Only accepts 1, eml, and stack operations
+  -e, --expand  Transforms expression for use with --strict
+  -l, --library File path to the macro library
+  -h, --help    Prints this text
+)";
+
+constexpr auto& at(const auto& container, size_t position)
+{
+    if (position >= std::size(container)) {
+        throw std::out_of_range{std::format("Index out of range: {} >= {}", position, std::size(container))};
+    }
+    return container[position];
+}
 
 options_type parse_options(std::span<const std::string_view> args)
 {
     options_type options;
-    for (auto& arg: args) {
-        if ("--expand" == arg) {
+    for (int i{0}; i < std::ssize(args); ++i) {
+        std::string_view arg = at(args, i);
+        auto match = [arg](char s, std::string_view l)
+        {
+            if (('\0' != s) and ((std::string("-") + s) == arg)) return true;
+            if ((not l.empty()) and ((std::string("--").append(l)) == arg)) return true;
+            return false;
+        };
+        if (match('s', "strict")) {
+            options.strict = true;
+        } else if (match('e', "expand")) {
             options.expand = true;
+        } else if (match('l', "library")) {
+            ++i;
+            if (i >= std::ssize(args)) {
+                throw usage_error{"--library must be followed by a file path"};
+            } else {
+                options.library = at(args, i);
+            }
+        } else if (match('h', "help")) {
+            std::cout << help_text;
+            std::exit(EXIT_SUCCESS);
+        } else if (arg.starts_with("-")) {
+            throw usage_error{std::format("Unrecognized option: {}", arg)};
+        } else {
+            options.files.push_back(arg);
         }
     }
-    //TODO: Catch unknown options
+    if (options.strict and options.expand) {
+        throw usage_error{"The --strict and --expand options are mutually exclusive."};
+    }
     return options;
 }
 
@@ -62,11 +113,13 @@ bool is_whitespace(unsigned char c) { return std::isspace(c); }
 
 bool is_digit(unsigned char c) { return std::isdigit(c); }
 
-// Prints n as (real,imag). std::complex already prints that way, but Boost's
-// cpp_complex leaves out the parentheses and imaginary part when it's zero.
 void print_number(std::ostream& out, const number_type& n)
 {
-    out << '(' << n.real() << ',' << n.imag() << ')';
+    if (0 == n.imag()) {
+        out << n.real();
+    } else {
+        out << '(' << n.real() << ',' << n.imag() << ')';
+    }
 }
 
 //NOTE: We intentionally copy the_stack instead of taking it by reference.
@@ -172,10 +225,11 @@ std::optional<std::string> find_undefined_macro(const std::string& body)
     return std::nullopt;
 }
 
-void read_library()
+void read_library(std::string path)
 {
-    std::ifstream file("library.eml");
-    if (not file) throw_string("Failed to open library.eml");
+    if (path.empty()) path = "library.eml";
+    std::ifstream file(path);
+    if (not file) throw_string(std::format("Failed to open \"{}\"", path));
     std::string line;
     while (std::getline(file, line)) {
         if (is_empty_string(line)) continue;
@@ -369,7 +423,7 @@ void expand(std::istream& in, auto&& on_word)
     }
 }
 
-void evaluate(const std::string& word, number_stack& the_stack)
+void evaluate(bool strict, const std::string& word, number_stack& the_stack)
 {
     auto [klass, number] = classify(word);
     switch (klass) {
@@ -387,8 +441,60 @@ void evaluate(const std::string& word, number_stack& the_stack)
         case word_class::macro:
             [[fallthrough]];
         case word_class::unknown:
-            throw std::logic_error(std::format("Evaluate was given \"{}\"", word));
+            {
+                std::ostringstream message;
+                message << word << " not recognized\n";
+                if (strict) {
+                    message << "In strict mode, the only operations recognized are:\n";
+                    bool first{true};
+                    std::vector<std::string> built_ins;
+                    std::ranges::copy(the_built_ins | std::views::keys, std::back_inserter(built_ins));
+                    std::ranges::sort(built_ins);
+                    for (auto& key: built_ins) {
+                        if (not std::exchange(first, false)) message << ", ";
+                        message << key;
+                    }
+                }
+                throw std::runtime_error(message.str());
+            }
             break;
+    }
+}
+
+void go(const options_type& options, std::istream& in, std::ostream& out)
+{ 
+    number_stack the_stack;
+    if (options.expand) {
+        bool first{true};
+        expand(in, [&first, &out](const std::string& word)
+        {
+            if (not std::exchange(first, false)) out << ' ';
+            out << word;
+        });
+        out << '\n';
+    } else if(options.strict) {
+        std::string word;
+        while (in >> word) {
+            evaluate(options.strict, word, the_stack);
+        }
+    } else {
+        expand(in, [&the_stack, &options](const std::string& word)
+                { evaluate(options.strict, word, the_stack); });
+    }
+
+    if (not options.expand) {
+        if (1 != the_stack.size()) {
+            std::ostringstream message;
+            if (the_stack.empty()) {
+                message << "Empty stack";
+            } else {
+                message << "Too many values on the stack\n";
+                print_stack(message, the_stack);
+            }
+            throw_string(message.str());
+        }
+        print_number(out, the_stack.top());
+        out << '\n';
     }
 }
 
@@ -400,32 +506,26 @@ int main(int argc, char** argv)
         auto args{std::vector<std::string_view>(argv + 1, argv + argc)};
         auto options{parse_options(args)};
         initialize_built_ins();
-        read_library();
-        number_stack the_stack;
+        if (not options.strict) read_library(options.library);
 
-        if (options.expand) {
-            bool first{true};
-            expand(std::cin, [&first](const std::string& word)
-                    {
-                        if (not std::exchange(first, false)) std::cout << ' ';
-                        std::cout << word;
-                    });
-            std::cout << '\n';
+        if (options.files.empty()) {
+            go(options, std::cin, std::cout);
         } else {
-            expand(std::cin, [&the_stack](const std::string& word){ evaluate(word, the_stack); });
-            if (1 != the_stack.size()) {
-                if (the_stack.empty()) {
-                    std::cerr << "ERROR: Empty stack\n";
-                } else {
-                    std::cerr << "ERROR: Too many values on the stack\n";
-                    print_stack(std::cerr, the_stack);
+            for (std::string_view file: options.files) {
+                std::string s(file);
+                std::ifstream in(s);
+                if (not in) {
+                    throw_string(std::format("File \"{}\" not found", file));
                 }
-                return EXIT_FAILURE;
+                go(options, in, std::cout);
             }
-            print_number(std::cout, the_stack.top());
-            std::cout << '\n';
         }
+
         return EXIT_SUCCESS;
+    } catch (usage_error& e) {
+        std::cerr << e.what() << '\n';
+        std::cerr << help_text;
+        return EXIT_USAGE;
     } catch (std::exception& e) {
         std::cerr << "EXCEPTION: " << e.what() << '\n';
         return EXIT_FAILURE;
