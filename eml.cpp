@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdlib>
 #include <format>
@@ -184,6 +185,26 @@ auto pop(auto& the_stack)
     return n;
 }
 
+template <size_t N>
+auto multipop(auto& the_stack)
+{
+    if (the_stack.size() < N) throw_string("Tried to pop an empty stack.");
+    using value_type = std::remove_cvref_t<decltype(the_stack)>::value_type;
+    std::array<value_type, N> values;
+    for (auto& value: values | std::views::reverse) {
+        value = pop(the_stack);
+    }
+    return values;
+}
+
+template <typename Stack>
+void multipush(Stack& the_stack, std::initializer_list<typename Stack::value_type> values)
+{
+    for (auto& value: values) {
+        the_stack.push(value);
+    }
+}
+
 void initialize_built_ins()
 {
     the_built_ins["eml"] =
@@ -199,17 +220,49 @@ void initialize_built_ins()
     the_built_ins["swap"] =
         [](number_stack& the_stack)
         {
-            auto y{pop(the_stack)};
-            auto x{pop(the_stack)};
-            the_stack.push(y);
-            the_stack.push(x);
+            auto [x, y] = multipop<2>(the_stack);
+            multipush(the_stack, {y, x});
         };
+
     the_built_ins["dup"] =
         [](number_stack& the_stack)
         {
             auto x{pop(the_stack)};
-            the_stack.push(x);
-            the_stack.push(x);
+            multipush(the_stack, {x, x});
+        };
+
+    the_built_ins["over"] =
+        [](number_stack& the_stack)
+        {
+            auto [x, y] = multipop<2>(the_stack);
+            multipush(the_stack, {x, y, x});
+        };
+
+    the_built_ins["rot"] =
+        [](number_stack& the_stack)
+        {
+            auto [x, y, z] = multipop<3>(the_stack);
+            multipush(the_stack, {y, z, x});
+        };
+
+    the_built_ins["drop"] =
+        [](number_stack& the_stack)
+        {
+            pop(the_stack);
+        };
+
+    the_built_ins["nip"] =
+        [](number_stack& the_stack)
+        {
+            auto [_, y] = multipop<2>(the_stack);
+            the_stack.push(y);
+        };
+
+    the_built_ins["tuck"] =
+        [](number_stack& the_stack)
+        {
+            auto [x, y] = multipop<2>(the_stack);
+            multipush(the_stack, {y, x, y});
         };
 }
 

@@ -116,8 +116,9 @@ calc_approx() { check_approx "$root" "$1" "$1" "$2"; }
 calc_error()  { check_error  "$root" "$1" "$1" "$2"; }
 
 # expand INPUT EXPECTED_NUMBER: runs INPUT through eml --expand, checks that
-# the output uses only 1, eml, swap and dup, then evaluates that output with
-# eml --strict and compares it with EXPECTED_NUMBER as check_approx does.
+# the output uses only 1, eml and the stack operations, then evaluates that
+# output with eml --strict and compares it with EXPECTED_NUMBER as
+# check_approx does.
 expand()
 {
     local name="--expand '$1'"
@@ -129,9 +130,10 @@ expand()
     local expanded="$out"
     local others
     others="$(printf '%s\n' "$expanded" | tr ' ' '\n' |
-        grep -v -x -e 1 -e eml -e swap -e dup -e '' | sort -u | tr '\n' ' ')"
+        grep -v -x -e 1 -e eml -e swap -e dup -e over -e rot -e drop \
+            -e nip -e tuck -e '' | sort -u | tr '\n' ' ')"
     if [ -n "$others" ]; then
-        fail "$name" "$1" "only 1 eml swap dup" "also: $others"
+        fail "$name" "$1" "only 1, eml and stack operations" "also: $others"
         return
     fi
     run_eml "$root" "$expanded" --strict
@@ -168,10 +170,28 @@ calc_approx '-1 ln'      '(0,3.14159)'
 calc        '(1,2) exp'  '(-1.1312,2.47173)'
 calc_approx '1 2 swap -' '1'
 
+# Stack operations. "10 / +" folds the stack into one number whose digits
+# are the values left on it, bottom first: "1 2 swap 10 / +" leaves 2 1, so
+# 2.1.
+calc_approx '1 2 swap 10 / +'         '2.1'
+calc_approx '2 dup 10 / +'            '2.2'
+calc_approx '1 2 over 10 / + 10 / +'  '1.21'
+calc_approx '1 2 3 rot 10 / + 10 / +' '2.31'
+calc_approx '1 2 tuck 10 / + 10 / +'  '2.12'
+calc_approx '1 2 nip'                 '2'
+calc        '1 2 drop'                '1'
+
 calc_error '1 dup'    'Too many values on the stack'
 calc_error '1 2'      'Too many values on the stack'
 calc_error 'eml'      'Tried to pop an empty stack'
 calc_error 'exp'      'Tried to pop an empty stack'
+calc_error 'dup'      'Tried to pop an empty stack'
+calc_error 'drop'     'Tried to pop an empty stack'
+calc_error '1 swap'   'Tried to pop an empty stack'
+calc_error '1 over'   'Tried to pop an empty stack'
+calc_error '1 2 rot'  'Tried to pop an empty stack'
+calc_error '1 nip'    'Tried to pop an empty stack'
+calc_error '1 tuck'   'Tried to pop an empty stack'
 calc_error 'foo'      'Unknown macro: foo'
 calc_error '1abc'     'Unknown macro: 1abc'
 calc_error ''         'Empty stack'
@@ -218,6 +238,166 @@ calc_approx '(0.5,-1.25)' '(0.5,-1.25)'
 calc_approx '(1e2,-3e1)'  '(100,-30)'
 calc_approx '1 2.5 +'     '3.5'
 
+### Other macros ###
+
+calc        'e'         '2.71828'
+calc_approx '2 sq'      '4'
+calc_approx '4 inv'     '0.25'
+calc_approx '2 10 ^'    '1024'
+calc_approx '9 sqrt'    '3'
+# root takes the index first: "3 8 root" is the cube root of 8.
+calc_approx '3 8 root'  '2'
+calc_approx '50 %'      '0.5'
+calc_approx '1000 log'  '3'
+# sign and abs are for real numbers.
+calc_approx '-5 sign'   '-1'
+calc_approx '5 sign'    '1'
+calc_approx '-5 abs'    '5'
+calc_approx '5 abs'     '5'
+
+calc_approx '180 deg->rad'  '3.14159'
+calc_approx 'pi rad->deg'   '180'
+
+# wrap360 brings any angle into [0, 360). Multiples of 360 are left out:
+# they can come out as either 0 or 360.
+calc_approx '30 wrap360'    '30'
+calc_approx '-30 wrap360'   '330'
+calc_approx '370 wrap360'   '10'
+calc_approx '-400 wrap360'  '320'
+calc_approx '719.5 wrap360' '359.5'
+calc_approx '180 wrap360'   '180'
+calc_approx '-180 wrap360'  '180'
+
+# dms->rad gives the minutes and seconds the sign of the degrees, then
+# wraps. Angles under 1 degree (0 degrees) are left out: the sign of 0 comes
+# out as 0 in the std build and -1 in Boost.
+calc_approx '90 0 0 dms->rad'             '1.5708'
+calc_approx '30 30 0 dms->rad rad->deg'   '30.5'
+calc_approx '-30 30 0 dms->rad rad->deg'  '329.5'
+calc_approx '10 20 30 dms->rad rad->deg'  '10.341667'
+calc_approx '-10 20 30 dms->rad rad->deg' '349.658333'
+calc_approx '400 0 0 dms->rad rad->deg'   '40'
+
+### Trigonometry ###
+# Expected values are from Python's cmath, with cot, sec and csc computed as
+# 1/tan, 1/cos and 1/sin, and arccot, arcsec and arccsc as arctan(1/z),
+# arccos(1/z) and arcsin(1/z). The points avoid the limits in LIMITS.md:
+# imaginary parts that make sin and cos wrap, ±1 for arcsin and arccos, and
+# branch cuts, where the sign of the imaginary part can differ.
+
+calc_approx '0.5 sin'            '0.479426'
+calc_approx '-2 sin'             '-0.909297'
+calc_approx '(1,1) sin'          '(1.29846,0.634964)'
+calc_approx '(-1,-2) sin'        '(-3.16578,-1.9596)'
+calc_approx '0.5 cos'            '0.877583'
+calc_approx '-2 cos'             '-0.416147'
+calc_approx '(1,1) cos'          '(0.83373,-0.988898)'
+calc_approx '(0,-10) cos'        '11013.2'
+calc_approx '0.5 tan'            '0.546302'
+calc_approx '-2 tan'             '2.18504'
+calc_approx '(1,1) tan'          '(0.271753,1.08392)'
+calc_approx '(0,-10) tan'        '(0,-1)'
+calc_approx '0.5 cot'            '1.83049'
+calc_approx '-2 cot'             '0.457658'
+calc_approx '(-1,-2) cot'        '(-0.0327978,0.984329)'
+calc_approx '0.5 sec'            '1.13949'
+calc_approx '10 sec'             '-1.19179'
+calc_approx '(0.3,0.4) sec'      '(0.95506,0.11225)'
+calc_approx '0.5 csc'            '2.08583'
+calc_approx '-2 csc'             '-1.09975'
+calc_approx '(-1,-2) csc'        '(-0.228375,0.141363)'
+calc_approx '0.5 arcsin'         '0.523599'
+calc_approx '-0.5 arcsin'        '-0.523599'
+calc_approx '(0.3,0.4) arcsin'   '(0.28063,0.405112)'
+calc_approx '(1,2) arcsin'       '(0.427079,1.52857)'
+calc_approx '(3,1) arcsin'       '(1.2331,1.8242)'
+calc_approx '0.5 arccos'         '1.0472'
+calc_approx '-0.5 arccos'        '2.0944'
+calc_approx '(0.3,0.4) arccos'   '(1.29017,-0.405112)'
+calc_approx '(1,2) arccos'       '(1.14372,-1.52857)'
+calc_approx '(5,0.1) arccos'     '(0.0204094,-2.29264)'
+calc_approx '0.5 arctan'         '0.463648'
+calc_approx '-2 arctan'          '-1.10715'
+calc_approx '800 arctan'         '1.56955'
+calc_approx '(1,2) arctan'       '(1.33897,0.402359)'
+calc_approx '(3,4) arctan'       '(1.44831,0.158997)'
+calc_approx '2 arccot'           '0.463648'
+calc_approx '-0.5 arccot'        '-1.10715'
+calc_approx '(1,2) arccot'       '(0.231824,-0.402359)'
+calc_approx '(0,5) arccot'       '(0,-0.202733)'
+calc_approx '2 arcsec'           '1.0472'
+calc_approx '-2 arcsec'          '2.0944'
+calc_approx '(1,2) arcsec'       '(1.38448,0.396568)'
+calc_approx '(0,5) arcsec'       '(1.5708,0.19869)'
+calc_approx '2 arccsc'           '0.523599'
+calc_approx '10 arccsc'          '0.100167'
+calc_approx '(1,2) arccsc'       '(0.186318,-0.396568)'
+calc_approx '(0,5) arccsc'       '(0,-0.19869)'
+
+# An inverse undoes its function.
+calc_approx '0.5 sin arcsin'     '0.5'
+calc_approx '0.5 cos arccos'     '0.5'
+calc_approx '0.5 tan arctan'     '0.5'
+calc_approx '(0.3,0.4) tan arctan' '(0.3,0.4)'
+
+### Hyperbolic functions ###
+# Expected values are from Python's cmath, with the reciprocal functions
+# computed the same way as for trigonometry. The points avoid the limits in
+# LIMITS.md: large imaginary parts in arcsinh and arccosh, and branch cuts.
+
+calc_approx '0.5 sinh'           '0.521095'
+calc_approx '-7 sinh'            '-548.316'
+calc_approx '(-2,2) sinh'        '(1.50931,3.42095)'
+calc_approx '(1,2) sinh'         '(-0.489056,1.40312)'
+calc_approx '0.5 cosh'           '1.12763'
+calc_approx '-7 cosh'            '548.317'
+calc_approx '(-2,2) cosh'        '(-1.56563,-3.29789)'
+calc_approx '(1,2) cosh'         '(-0.642148,1.06861)'
+calc_approx '0.5 tanh'           '0.462117'
+calc_approx '-7 tanh'            '-0.999998'
+calc_approx '(-5,1) tanh'        '(-1.00004,8.25672e-05)'
+calc_approx '(1,2) tanh'         '(1.16674,-0.243458)'
+calc_approx '0.5 coth'           '2.16395'
+calc_approx '-2 coth'            '-1.03731'
+calc_approx '(1,2) coth'         '(0.82133,0.171384)'
+calc_approx '0.5 sech'           '0.886819'
+calc_approx '-7 sech'            '0.00182376'
+calc_approx '(1,2) sech'         '(-0.413149,-0.687527)'
+calc_approx '0.5 csch'           '1.91903'
+calc_approx '-2 csch'            '-0.275721'
+calc_approx '(1,2) csch'         '(-0.221501,-0.635494)'
+calc_approx '0.5 arcsinh'        '0.481212'
+calc_approx '-7 arcsinh'         '-2.64412'
+calc_approx '(1,2) arcsinh'      '(1.46935,1.06344)'
+calc_approx '(-1,-2) arcsinh'    '(-1.46935,-1.06344)'
+calc_approx '2 arccosh'          '1.31696'
+calc_approx '0.5 arccosh'        '(0,1.0472)'
+calc_approx '-0.5 arccosh'       '(0,2.0944)'
+calc_approx '(1,2) arccosh'      '(1.52857,1.14372)'
+calc_approx '(-1,-2) arccosh'    '(1.52857,-1.99787)'
+calc_approx '0.5 arctanh'        '0.549306'
+calc_approx '-0.5 arctanh'       '-0.549306'
+calc_approx '(1,2) arctanh'      '(0.173287,1.1781)'
+calc_approx '(0,4) arctanh'      '(0,1.32582)'
+calc_approx '2 arccoth'          '0.549306'
+calc_approx '-7 arccoth'         '-0.143841'
+calc_approx '(1,2) arccoth'      '(0.173287,-0.392699)'
+calc_approx '(0,4) arccoth'      '(0,-0.244979)'
+calc_approx '0.5 arcsech'        '1.31696'
+calc_approx '2 arcsech'          '(0,1.0472)'
+calc_approx '(1,2) arcsech'      '(0.396568,-1.38448)'
+calc_approx '(0,4) arcsech'      '(0.247466,-1.5708)'
+calc_approx '0.5 arccsch'        '1.44364'
+calc_approx '-7 arccsch'         '-0.142376'
+calc_approx '(1,2) arccsch'      '(0.215612,-0.401586)'
+calc_approx '(0,4) arccsch'      '(0,-0.25268)'
+
+# An inverse undoes its function.
+calc_approx '0.5 sinh arcsinh'         '0.5'
+calc_approx '0.5 cosh arccosh'         '0.5'
+calc_approx '0.5 tanh arctanh'         '0.5'
+calc_approx '(0.3,0.4) tanh arctanh'   '(0.3,0.4)'
+
 ### --expand ###
 
 check_output "$root" "--expand '1'" '1' '1' --expand
@@ -228,6 +408,10 @@ expand '2.5e-1'      '0.25'
 expand '(3,4)'       '(3,4)'
 expand '(0,-4)'      '(0,-4)'
 expand '5 3 -'       '2'
+expand '1 2 3 rot 10 / + 10 / +'    '2.31'
+expand '1 2 tuck 10 / + 10 / +'     '2.12'
+expand '1 2 nip 1 drop'             '2'
+expand '-30 30 0 dms->rad rad->deg' '329.5'
 expand 'pi'          '3.14159'
 expand_error 'foo'   'Unknown macro: foo'
 
@@ -240,9 +424,16 @@ check_output "$root" "--strict '1 1 eml'" '1 1 eml' '2.71828' --strict
 check_output "$root" "-s '1 1 eml'"       '1 1 eml' '2.71828' -s
 strict '1 dup eml'                     '2.71828'
 strict '1 1 swap 1 swap eml 1 eml eml' '0'
+strict '1 1 eml 1 over eml eml'        '14.6129'
+strict '1 1 1 eml 1 rot eml eml'       '14.1543'
+strict '1 1 eml 1 tuck eml eml'        '0'
+strict '1 1 eml 1 nip'                 '1'
+strict '1 1 eml 1 drop'                '2.71828'
 strict_error '2'     'Numbers can only be 1. 2 is not 1.'
 strict_error '1 exp' 'exp not recognized'
 strict_error 'foo'   'foo not recognized'
+strict_error 'foo'   'the only operations recognized are:
+drop, dup, eml, nip, over, rot, swap, tuck'
 strict_error '1 1'   'Too many values on the stack'
 strict_error ''      'Empty stack'
 

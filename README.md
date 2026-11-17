@@ -12,7 +12,7 @@ The *eml* function is...
 
 When `eml --strict` is run, it accepts a sequence of whitespace-separated tokens. Each token must be `1`, `eml`, or a stack operation.
 
-Stack operations are provided as one concession to convenience. They're an implementation detail and only operate on the stack doing no computation. The currently supported stack operations are: `swap` and `dup`.
+Stack operations are provided as one concession to convenience. They're an implementation detail and only operate on the stack doing no computation.
 
 Example:
 
@@ -70,6 +70,16 @@ Example:
 ```txt
 ln: 1 swap 1 swap eml exp eml
 ```
+
+## Stack operations
+
+- `dup`: `x` &rarr; `x x`
+- `swap`: `x y` &rarr; `y x`
+- `over`: `x y` &rarr; `x y x`
+- `rot`: `x y z` &rarr; `y z x`
+- `drop`: `x` &rarr; empty stack
+- `nip`: `x y` &rarr; `y`
+- `tuck`: `x y` &rarr; `y x y`
 
 ## Infix front-end
 

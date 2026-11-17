@@ -1,21 +1,3 @@
-#  x * y = exp(ln(x) + ln(y))
-#  x / y = exp(ln(x) - ln(y))
-#  x ^ y = exp(y * ln(x))
-#  root(x, y) = y^(1/x) e.g. sqrt(x) = root(2, x) = x^(1/2)
-#  i = sqrt(-1)
-#  e = exp(1)
-#  pi = -i * ln(-1)
-#  cos(x) = (exp(i * x) + exp(-i * x))/2
-#  tan(x) = sin(x) / cos(x)
-#  arccos(x) = -i * ln(y + (i * sqrt(1 - (y^2))))
-#  
-# Two button calculator:
-#  1
-#  eml(x,y) = exp(x) - ln(y)
-#  exp(x)   = eml(x, 1)
-#  ln(x)    = eml(1, exp(eml(1, x)))
-#  x - y    = eml(ln(x), exp(y))
-
 exp: 1 eml
 ln: 1 swap 1 swap eml exp eml
 -: swap ln swap exp eml
@@ -26,11 +8,58 @@ neg: 1 ln swap -
 ^: swap ln * exp
 sq: dup *
 inv: 1 swap /
+# `3 4 root` is the cube root of 4.
 root: swap inv ^
 sqrt: 1 1 + swap root
 i: 1 neg sqrt
 e: 1 exp
 pi: i neg 1 neg ln *
+%: 100 /
+log: ln 10 ln /
+
+# only works for reals; is csgn for complex
+sign: dup sq sqrt /
+# only works for reals
+abs: sq sqrt
+
+# deg/180 = rad/pi
+# (deg * pi)/180 = rad
+# (rad * 180)/pi = deg
+deg->rad: pi * 180 /
+rad->deg: 180 * pi /
+wrap360: 180 - 1 neg * deg->rad i * exp ln i / rad->deg 180 swap -
+dms->rad: 60 / + 60 / over sign * + wrap360 deg->rad
+
 cos: dup i * exp swap i neg * exp + 1 1 + /
 sin: dup i * exp swap i neg * exp - 1 1 + i * /
 tan: dup sin swap cos /
+cot: dup cos swap sin /
+sec: cos inv
+csc: sin inv
+
+arcsin: dup sq 1 - 1 neg * sqrt swap i * - ln i *
+arccos: dup sq 1 - 1 neg * sqrt i * - ln i *
+arctan: dup i - 1 neg * swap i + / ln i 2 / * neg
+# arccot(z) = arctan(1/z) = i/2 ln((z-i)/(z+i)). Written directly rather than
+# as "inv arctan" so that + and - only ever see i as their second argument.
+arccot: dup i - swap i + / ln i 2 / *
+arcsec: inv arccos
+arccsc: inv arcsin
+
+# sinh(x) = (e^x - e^-x) / 2, computed as (e^2x - 1) / (2 e^x) so that only
+# the constant 1 goes through - and + as the second argument.
+sinh: dup 2 * exp 1 - swap exp 2 * /
+cosh: dup 2 * exp 1 + swap exp 2 * /
+tanh: dup sinh swap cosh /
+coth: tanh inv
+sech: cosh inv
+csch: sinh inv
+arcsinh: dup sq 1 + sqrt + ln
+# arccosh(x) = ln(x + sqrt(x + 1) sqrt(x - 1)), the principal value.
+arccosh: dup dup 1 - sqrt swap 1 + sqrt * + ln
+# 1 - x is computed as -(x - 1) so that - only sees 1 as its second argument.
+arctanh: dup 1 + swap 1 - 1 neg * / ln 2 /
+arccoth: dup 1 + swap 1 - / ln 2 /
+arcsech: inv arccosh
+arccsch: dup 1 swap / swap sq 1 swap / 1 + sqrt + ln
+
