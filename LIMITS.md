@@ -94,6 +94,66 @@ At π/2, where tan is infinite, `pi 2 / tan` gives 4.4 × 10¹⁵ + 5.6 × 10¹�
 - **Errors grow with nesting.** Each layer of `exp` and `ln` adds rounding error: `-8 3 ^` gives −512 + 1.1 × 10⁻¹² i.
 - **The display hides most of it.** Results are printed to 6 significant digits, so errors in the real part rarely show.
 
+## Number expansion
+
+Every number other than `1` is rebuilt from `1` and *eml* before it's used, both when calculating and with `--expand`. `2` is computed as `1 1 +`, and `2.5` as 2 + 5/10¹. The steps are:
+
+- **Digits:** the integer is built one digit at a time: multiply the total by ten, then add the digit.
+- **Fraction:** the fraction digits f are added as f / 10ⁿ.
+- **Exponent:** the result is multiplied by 10ᵏ, computed with `^`.
+- **Sign:** a negative number is multiplied by −1.
+- **Complex numbers:** re + im·i is computed as re · (1 + (im/re)·i), or as (im·i) · (1 − (re/im)·i) when the imaginary part is larger. Parts that are zero are left out.
+
+These steps are chosen so that `+` and `-` only ever add or subtract something small: a digit, a fraction below 1, or an imaginary part of size at most 1. So the limits under [Subtraction and addition](#subtraction-and-addition) never apply. Large values only pass through `*`, `/` and `^`.
+
+### Size
+
+The expansion grows with the number of digits and the size of the exponent, not with the size of the number:
+
+| Input | Words after `--expand` |
+|---|---|
+| `1` | 1 |
+| `0` | 9 |
+| `2` | 38 |
+| `7` | 223 |
+| `23` | 538 |
+| `1000` | 1,168 |
+| `2.5` | 657 |
+| `3.14159` | 2,953 |
+| `1e300` | 1,309 |
+| `(3,4)` | 841 |
+| `12345678901234567890` | 10,685 |
+
+### Rounding error
+
+Every number except `1` carries some rounding error. The 6-digit display hides most of it. At full precision in the std build:
+
+| Input | Result | Relative error |
+|---|---|---|
+| `10` | 10.000000000000002 | 2 × 10⁻¹⁶ |
+| `123456` | 123455.99999999975 | 2 × 10⁻¹⁵ |
+| `0.1` | 0.099999999999999936 | 6 × 10⁻¹⁶ |
+| `3.14159` | 3.1415900000000008 | 3 × 10⁻¹⁶ |
+| `1e10` | 10000000000.000074 | 7 × 10⁻¹⁵ |
+| `1e300` | 1.0000000000003174 × 10³⁰⁰ | 3 × 10⁻¹³ |
+| `1e-300` | 9.9999999999968255 × 10⁻³⁰¹ | 3 × 10⁻¹³ |
+
+The exponent causes the largest errors. 10ᵏ is computed as exp(k · ln 10), so any error in ln 10 is multiplied by k.
+
+### Leftover parts
+
+- **Negative numbers get a tiny imaginary part,** because multiplying by −1 goes through ln(−1) = iπ: `-3` gives −3 + 3.7 × 10⁻¹⁶ i.
+- **A part much smaller than the other is lost.** The error is relative to the size of the whole number, so `(1e-300,1)` gives a real part of −1.6 × 10⁻¹⁶ instead of 10⁻³⁰⁰. Likewise, `(0,4)` gives a real part of −6.4 × 10⁻¹⁶ instead of 0.
+
+### In the Boost build
+
+The Boost build has about 50 digits of precision, so the relative errors are around 10⁻⁵⁰ to 10⁻¹⁰⁰. Two things are still visible:
+
+- **Zero isn't exact.** `0` is built as `1 ln`, which comes out as −3.2 × 10⁻⁵⁰ instead of 0. In the std build it's exactly 0.
+- **Large numbers show an imaginary part.** Every expanded number gets a small imaginary part, and it grows in proportion to the number. For large numbers it's big enough to print. `1e100` gives 1 × 10¹⁰⁰ − 1663.16i, and `1e300` gives 1 × 10³⁰⁰ − 5.6 × 10²⁰³ i. Relative to the number, both are about 10⁻⁹⁷.
+
+The Boost build accepts much larger and smaller numbers than the std build: `1e400`, `1e-400` and `1e100000` all work, with the same kind of imaginary leftover.
+
 ## Input
 
 - **No spaces in complex numbers.** `(1,2)` works, but `(1, 2)` fails with `Unknown macro: (1,`, because input is split into words at spaces.

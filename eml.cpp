@@ -8,6 +8,7 @@
 #include <istream>
 #include <optional>
 #include <ostream>
+#include <ranges>
 #include <span>
 #include <sstream>
 #include <stack>
@@ -15,6 +16,8 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 // Build with -DEML_USE_BOOST to use Boost.Multiprecision's cpp_complex_50
 // (50 decimal digits) instead of std::complex<double>.
@@ -87,14 +90,14 @@ void trim(std::string& s)
     std::erase_if(s, is_whitespace);
 }
 
-// We don't get a string_view ctor for istringstream until C++26
-// We don't get ispanstream until C++23.
-std::optional<number_type> parse_number(const std::string& s)
+std::optional<number_type> parse_number(std::string_view sv)
 {
     // A number must contain a digit. Without this check, Boost's cpp_complex
     // reads "-" as 0, which would hide the - macro.
-    if (std::ranges::none_of(s, is_digit)) return std::nullopt;
-    std::istringstream in(s);
+    if (std::ranges::none_of(sv, is_digit)) return std::nullopt;
+    // We don't get a string_view ctor for istringstream until C++26
+    // We don't get ispanstream until C++23.
+    std::istringstream in{std::string(sv)};
     number_type n;
     try {
         if (in >> n and (in >> std::ws).eof()) return n;
@@ -103,6 +106,11 @@ std::optional<number_type> parse_number(const std::string& s)
         // Boost's cpp_complex throws on input like "1abc" instead of failing the stream.
     }
     return std::nullopt;
+}
+
+number_type parse_number_(std::string_view sv)
+{
+    return parse_number(sv).value();
 }
 
 std::pair<word_class, number_type> classify(const std::string& word)
@@ -201,6 +209,128 @@ void read_library()
     }
 }
 
+void check_library()
+{
+    static bool already_checked{false};
+    if (already_checked) return;
+    const std::vector<std::string> required{"ln", "-", "+", "*", "/", "^", "neg", "i"};
+    std::vector<std::string> missing;
+    for (auto& name: required) {
+        if (not the_macros.contains(name)) missing.push_back(name);
+    }
+    if (not missing.empty()) {
+        std::ostringstream message;
+        message << "Library is missing these required macros: ";
+        bool first{true};
+        for (auto& name: missing) {
+            if (not std::exchange(first, false)) message << ", ";
+            message << name;
+        }
+        throw_string(message.str());
+    }
+    already_checked = true;
+}
+
+void expand_small_number(std::ostream& out, unsigned value)
+{
+    if (1 == value) {
+        out << " 1";
+    } else if (value > 0) {
+        for (unsigned i{0}; i < value; ++i) out << " 1";
+        for (unsigned i{1}; i < value; ++i) out << " +";
+    }
+}
+
+void expand_real(std::ostream& out, std::string_view text)
+{
+    if ('+' == text.at(0)) text.remove_prefix(1);
+    auto e{text.find_first_of("Ee")};
+    std::string_view e_part;
+    if (text.npos != e) {
+        e_part = text.substr(e + 1);
+        text = text.substr(0, e);
+    }
+    bool negative{false};
+    if ('-' == text.at(0)) {
+        negative = true;
+        text.remove_prefix(1);
+    }
+    auto dot{text.find('.')};
+    std::string_view fraction;
+    if (text.npos != dot) {
+        fraction = text.substr(dot + 1);
+        text = text.substr(0, dot);
+    }
+    bool first{true};
+    for (auto& digit: text) {
+        if (first and ('0' == digit)) continue;
+        if (not first) {
+            expand_small_number(out, 10);
+            out << " *";
+        }
+        if ('0' != digit) {
+            expand_small_number(out, digit - '0');
+            if (not first) out << " +";
+        }
+        first = false;
+    }
+    if (first) out << " 1 ln";
+    if (not fraction.empty()) {
+        expand_real(out, fraction);
+        expand_small_number(out, 10);
+        expand_real(out, std::to_string(fraction.size()));
+        out << " ^ / +";
+    }
+    if (not e_part.empty()) {
+        expand_small_number(out, 10);
+        expand_real(out, e_part);
+        out << " ^ *";
+    }
+    if (negative) out << " 1 neg *";
+}
+
+void expand_number(std::ostream& out, std::string_view text)
+{
+    const number_type zero{0};
+    if ('(' == text.at(0)) {
+        text.remove_prefix(1);
+        text.remove_suffix(1);
+        auto comma{text.find(',')};
+        if (text.npos == comma) {
+            expand_real(out, text);
+            return;
+        }
+        auto real{text.substr(0, comma)};
+        auto imag{text.substr(comma + 1)};
+        auto r{parse_number_(real)};
+        auto i{parse_number_(imag)};
+        if ((zero == r) and (zero == i)) {
+            out << " 1 ln";
+        } else if (zero == i) {
+            expand_real(out, real);
+        } else if (zero == r) {
+            expand_real(out, imag);
+            out << " i *";
+        } else if (abs(r) >= abs(i)) {
+            out << " 1";
+            expand_real(out, imag);
+            expand_real(out, real);
+            out << " / i * +";
+            expand_real(out, real);
+            out << " *";
+        } else {
+            out << " 1";
+            expand_real(out, real);
+            expand_real(out, imag);
+            out << " / i * -";
+            expand_real(out, imag);
+            out << " i * *";
+        }
+        return;
+    }
+    expand_real(out, text);
+}
+
 // Calls on_word for each number and built-in found in the stream replacing macros with their expansion.
 void expand(std::istream& in, auto&& on_word)
 {
@@ -209,7 +339,20 @@ void expand(std::istream& in, auto&& on_word)
         auto [klass, _] = classify(word);
         switch (klass) {
             case word_class::number:
+#ifdef DONT_EXPAND_NUMBERS
                 [[fallthrough]];
+#else
+                if ("1" == word) {
+                    on_word(word);
+                } else {
+                    check_library();
+                    std::ostringstream out;
+                    expand_number(out, word);
+                    std::istringstream other_in{out.str()};
+                    expand(other_in, on_word);
+                }
+                break;
+#endif
             case word_class::built_in:
                 on_word(word);
                 break;
@@ -228,12 +371,14 @@ void expand(std::istream& in, auto&& on_word)
 
 void evaluate(const std::string& word, number_stack& the_stack)
 {
-    // We could have expand pass the parsed number in the number case.
-    // For now, we'll leave it like this. Eventually this function should only see 1.
     auto [klass, number] = classify(word);
     switch (klass) {
         case word_class::number:
-            //TODO: Only accept 1?
+#ifndef DONT_EXPAND_NUMBERS
+            if ("1" != word) {
+                throw_string(std::format("Numbers can only be 1. {} is not 1.", word));
+            }
+#endif
             the_stack.push(number);
             break;
         case word_class::built_in:
