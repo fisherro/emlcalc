@@ -83,3 +83,7 @@ The `eml-boost` target will build `eml-boost`, which uses `boost::multiprecision
 
 The `test` and `test-boost` targets can be used to run the test cases.
 
+## Known limits
+
+Known limits are documented in LIMITS.md
+
