@@ -83,11 +83,66 @@ ln: 1 swap 1 swap eml exp eml
 
 ## Infix front-end
 
-TBD: A program that takes conventional infix notation and converts it into a form digestible by `eml` in normal mode.
+`infix` translates conventional infix notation into RPN for `eml` in normal mode. It reads one expression from standard input, or one from each file given on the command line, and prints the translation.
+
+Example:
+
+```sh
+$ echo "1 + 2 * sin(pi/4)" | ./infix
+pi 4 / sin 2 * 1 +
+$ echo "1 + 2 * sin(pi/4)" | ./infix | ./eml
+(2.41421,-3.14018e-16)
+```
+
+Like `eml`, it reads ./library.eml, or the file given with `--library`. The library decides which functions exist and how many arguments each takes, so new macros can be used without changing `infix`.
+
+### Syntax
+
+- Numbers are written as in `eml`: `2`, `2.5`, `.5`, `1e-3`. Their text is passed through unchanged.
+- An imaginary number is a number followed by `i`: `4i`, `2.5e3i`. `i`, `pi` and `e` are the library's constants.
+- Operators, from loosest to tightest:
+  - `+` and `-`
+  - `*` and `/`
+  - unary `-` and `+`
+  - `^` (or `**`), which is right-associative: `2^3^2` is `2^(3^2)`
+  - postfix `!` (factorial)
+
+  So `-2^2` is -4, and `-3!` is -6.
+- Functions are called as `name(arg, ...)`. The arguments are in the same order as on the `eml` stack:
+  - `log(b, x)` is the base-b log of x
+  - `root(n, x)` is the nth root of x
+  - `atan2(y, x)`
+- A function with no arguments can be written with or without parentheses: `pi` or `pi()`.
+- An identifier can't contain `-` or `>`. In a name, `_to_` stands for `->` and `_` stands for `-`, so `deg_to_rad(180)` calls `deg->rad` and `lngamma_big(10)` calls `lngamma-big`.
+- There is no implicit multiplication. `2pi` and `2(3)` are errors; write `2*pi` and `2*(3)`.
+
+### Working around eml's limits
+
+The translator rearranges expressions to avoid some of the limits described in LIMITS.md:
+
+- Complex literals are folded into one number. `3+4i` becomes `(3,4)`, not `3 4 i * +`, which would give the wrong answer because 4i's imaginary part is larger than π. Negative literals are folded the same way: `-3` stays `-3`.
+- Unary minus becomes `-1 *` instead of `neg`. `neg` computes 0 - x, which overflows for x > 709 and wraps when x's imaginary part is outside (-π, π].
+- In `+` and `*`, a literal is put second: `1 + sin(1)` becomes `1 sin 1 +`.
+- `c - x`, where c is a literal, becomes `x -1 * c +`, so that the computed value is never the second argument of `-`.
+
+These rewrites only move literal text around and never do arithmetic, so `eml-boost` keeps its full precision.
+
+### Errors
+
+Syntax errors give the position, the line, and a caret:
+
+```sh
+$ echo "2pi" | ./infix
+<stdin>:1:2: error: missing operator after 2 (implicit multiplication isn't supported)
+  2pi
+   ^
+```
 
 ## Building and testing
 
-The program can be built with `make` or `make eml`.
+`make` builds both `eml` and `infix`. `make eml` builds only `eml`.
+
+`make infix` builds `infix`, which is written in OCaml and needs `ocamlopt` (`sudo port install ocaml`).
 
 The `eml-boost` target will build `eml-boost`, which uses `boost::multiprecision::cpp_complex` instead of `std::complex<double>`.
 
@@ -102,6 +157,8 @@ Known limits are documented in LIMITS.md
 November 2026
 
 In my other personal projects, I'm letting coding agents write the bulk of the code. I review the code and guide the agent much like mentoring a junior programmer. With this project, though, what I wanted to get out of it meant writing the code myself. Claude reviewed the code and wrote the tests, but I wrote all the code in eml.cpp and library.eml
+
+(Claude also wrote infix.)
 
 While that did serve my purposes, it also highlighted for me how much slower the "old" way of working is. So many write-compile-fix-compile-tweak-compile cycles. I'm also not convinced that my code is significantly better than what Opus is able to write these days.
 

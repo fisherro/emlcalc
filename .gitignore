@@ -1,0 +1,17 @@
+# Built programs. Anchored so they only match at the top level.
+/eml
+/eml-boost
+/infix
+
+# Debug symbols from building with -g on macOS
+*.dSYM/
+
+# OCaml build files. The Makefile deletes these, but a failed build can
+# leave them behind.
+*.cmi
+*.cmo
+*.cmx
+*.o
+
+# macOS
+.DS_Store

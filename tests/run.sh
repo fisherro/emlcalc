@@ -644,6 +644,196 @@ lib_error '1' 'No colon found in macro'
 rm -f "$lib_dir/library.eml"
 lib_error '1' 'Failed to open "library.eml"'
 
+### Infix front end ###
+# infix translates infix notation into RPN for eml. infix_rpn checks the
+# translation's text; infix_value pipes it into eml and checks the result as
+# check_approx does. Skipped if infix isn't built (it needs OCaml).
+
+infix="${INFIX:-$root/infix}"
+case "$infix" in
+    /*) ;;
+    *) infix="$PWD/$infix" ;;
+esac
+
+run_infix()      # INPUT [OPTION...]: sets $out, $err and $status
+{
+    local input="$1"
+    shift
+    out="$(cd "$root" && printf '%s\n' "$input" | "$infix" "$@" 2>"$tmp/stderr")"
+    status=$?
+    err="$(cat "$tmp/stderr")"
+}
+
+infix_rpn()      # INPUT EXPECTED_RPN
+{
+    run_infix "$1"
+    if [ "$status" -ne 0 ]; then
+        fail "infix '$1'" "$1" "$2" "exit $status, stderr: $err"
+    elif [ "$out" != "$2" ]; then
+        fail "infix '$1'" "$1" "$2" "$out"
+    else
+        passed=$((passed + 1))
+    fi
+}
+
+infix_value()    # INPUT EXPECTED_NUMBER
+{
+    run_infix "$1"
+    if [ "$status" -ne 0 ]; then
+        fail "infix '$1'" "$1" "$2" "exit $status, stderr: $err"
+        return
+    fi
+    check_approx "$root" "infix '$1' | eml" "$out" "$2"
+}
+
+infix_error()    # INPUT EXPECTED_STDERR_FRAGMENT
+{
+    run_infix "$1"
+    if [ "$status" -eq 0 ]; then
+        fail "infix '$1'" "$1" "failure containing '$2'" "exit 0, stdout: $out"
+    else
+        case "$err" in
+            *"$2"*) passed=$((passed + 1)) ;;
+            *) fail "infix '$1'" "$1" "stderr containing '$2'" "$err" ;;
+        esac
+    fi
+}
+
+if [ ! -x "$infix" ]; then
+    echo "note: $infix not found; skipping the infix tests (make infix)"
+else
+
+# Precedence and associativity
+infix_rpn '1 + 2 * 3'   '2 3 * 1 +'
+infix_rpn '(1 + 2) * 3' '1 2 + 3 *'
+infix_rpn '8 - 4 - 2'   '8 4 - 2 -'
+infix_rpn '8 / 4 / 2'   '8 4 / 2 /'
+infix_rpn '2 ^ 3 ^ 2'   '2 3 2 ^ ^'
+infix_rpn '2 ** 10'     '2 10 ^'
+infix_rpn '2 ^ -3'      '2 -3 ^'
+infix_rpn '2 ^ 3!'      '2 3 ! ^'
+infix_rpn '+5'          '5'
+infix_value '8 - 4 - 2' '2'
+infix_value '8 / 4 / 2' '1'
+infix_value '2 ^ 3 ^ 2' '512'
+
+# Unary minus binds looser than ^ and !, tighter than * and /. It folds
+# into literals; otherwise it's "-1 *", because neg wraps and overflows.
+infix_rpn '-3'          '-3'
+infix_rpn '--3'         '3'
+infix_rpn '-2 ^ 2'      '2 2 ^ -1 *'
+infix_rpn '-3!'         '3 ! -1 *'
+infix_rpn '-2 * 3'      '-2 3 *'
+infix_rpn '-pi'         'pi -1 *'
+infix_value '-2 ^ 2'    '-4'
+infix_value '-3!'       '-6'
+infix_value '-(800 + 0)' '-800'
+
+# Complex literals fold into (re,im) instead of going through +
+infix_rpn '4i'          '(0,4)'
+infix_rpn 'i'           'i'
+infix_rpn '3 + 4i'      '(3,4)'
+infix_rpn '3 - 4i'      '(3,-4)'
+infix_rpn '4i + 3'      '(3,4)'
+infix_rpn '4i - 3'      '(-3,4)'
+infix_rpn '-3 - 4i'     '(-3,-4)'
+infix_rpn '-(3 + 4i)'   '(-3,-4)'
+infix_rpn '3 + 4 * i'   '(3,4)'
+infix_rpn '3 + i'       '(3,1)'
+infix_rpn '-i'          '(0,-1)'
+infix_rpn '2.5e3i'      '(0,2.5e3)'
+infix_value '3 + 4i'    '(3,4)'
+infix_value '-(0 + 4i)' '(0,-4)'
+
+# Literals go second in + and *, and c - x becomes x * -1 + c
+infix_rpn '1 + sin(1)'  '1 sin 1 +'
+infix_rpn '2 * sin(1)'  '1 sin 2 *'
+infix_rpn 'sin(1) - 1'  '1 sin 1 -'
+infix_rpn '1 - sin(1)'  '1 sin -1 * 1 +'
+infix_rpn '2 + 3'       '2 3 +'
+infix_value '1 - sin(1)' '0.158529'
+infix_value '1 - (0 + 4i) * 1' '(1,-4)'
+
+# Number text passes through unchanged, so Boost keeps its precision
+infix_rpn '.5 + 1e-3'   '.5 1e-3 +'
+infix_rpn '1.'          '1.'
+infix_rpn '2E+3'        '2E+3'
+
+# Functions, constants and argument order
+infix_rpn 'sin(pi / 4)' 'pi 4 / sin'
+infix_rpn 'log(2, 8)'   '2 8 log'
+infix_rpn 'root(3, 8)'  '3 8 root'
+infix_rpn 'atan2(1, 2)' '1 2 atan2'
+infix_rpn 'pi()'        'pi'
+infix_rpn 'eml(1, 1)'   '1 1 eml'
+infix_rpn 'deg_to_rad(180)'      '180 deg->rad'
+infix_rpn 'dms_to_rad(1, 2, 3)'  '1 2 3 dms->rad'
+infix_rpn 'lngamma_big(10)'      '10 lngamma-big'
+infix_value '1 + 2 * sin(pi / 4)'     '2.41421'
+infix_value 'sin(1)^2 + cos(1)^2'     '1'
+infix_value 'e ^ (i * pi)'            '-1'
+infix_value 'log(2, 8)'               '3'
+infix_value 'log10(1000)'             '3'
+infix_value 'nCr(52, 5)'              '2598960'
+infix_value 'atan2(1, 1) * 4'         '3.14159'
+infix_value 'hypot(3, 4)'             '5'
+infix_value '5!'                      '120'
+
+# Errors
+infix_error ''              'unexpected end of input'
+infix_error '1 +'           'unexpected end of input'
+infix_error '(1 + 2'        "missing ')'"
+infix_error 'log(2, 8'      "missing ')'"
+infix_error '1 + 2)'        "unexpected ')'"
+infix_error '1, 2'          "unexpected ','"
+infix_error '2pi'           'implicit multiplication'
+infix_error '2 pi'          'implicit multiplication'
+infix_error '2(3)'          'implicit multiplication'
+infix_error '1 $ 2'         "unexpected character '\$'"
+infix_error 'foo(1)'        'unknown function foo'
+infix_error 'sin'           'sin takes 1 argument: sin(...)'
+infix_error 'sin()'         'sin takes 1 argument, not 0'
+infix_error 'log(8)'        'log takes 2 arguments, not 1'
+infix_error 'swap(1, 2)'    "swap leaves 2 values on the stack"
+infix_error '1 +'           '<stdin>:1:4: error:'
+
+# Options and files
+run_infix '1' --bogus
+if [ "$status" -eq 2 ] && case "$err" in *'Unrecognized option: --bogus'*) true ;; *) false ;; esac
+then passed=$((passed + 1))
+else fail 'infix --bogus' '' 'exit 2, Unrecognized option' "exit $status, stderr: $err"
+fi
+
+printf 'sq(3)\n' > "$tmp/a.txt"
+printf '1 +\n  2' > "$tmp/b.txt"
+run_infix '' "$tmp/a.txt" "$tmp/b.txt"
+expected="$(printf '3 sq\n1 2 +')"
+if [ "$status" -eq 0 ] && [ "$out" = "$expected" ]
+then passed=$((passed + 1))
+else fail 'infix with files' '' "$expected" "exit $status, stdout: $out, stderr: $err"
+fi
+
+# The library sets which functions exist and their argument counts,
+# worked out from the stack effects of the macro bodies.
+printf 'three: eml eml\nsecond: rot drop drop\n+: swap drop\n' > "$tmp/infix.eml"
+run_infix 'three(1, 2, 3) + second(4, 5, 6)' --library "$tmp/infix.eml"
+if [ "$status" -eq 0 ] && [ "$out" = '1 2 3 three 4 5 6 second +' ]
+then passed=$((passed + 1))
+else fail 'infix --library arities' '' '1 2 3 three 4 5 6 second +' "exit $status, stdout: $out, stderr: $err"
+fi
+run_infix 'sin(1)' --library "$tmp/infix.eml"
+case "$status:$err" in
+    1:*'unknown function sin'*) passed=$((passed + 1)) ;;
+    *) fail 'infix --library without sin' '' 'unknown function sin' "exit $status, stderr: $err" ;;
+esac
+run_infix '1' --library "$tmp/missing.eml"
+case "$status:$err" in
+    1:*'Failed to open'*) passed=$((passed + 1)) ;;
+    *) fail 'infix --library missing' '' 'Failed to open' "exit $status, stderr: $err" ;;
+esac
+
+fi
+
 ### Summary ###
 
 echo "$passed passed, $failed failed"
