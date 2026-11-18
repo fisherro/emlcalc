@@ -430,6 +430,46 @@ The Boost build accepts much larger and smaller numbers than the std build: `1e4
 - **No spaces in complex numbers.** `(1,2)` works, but `(1, 2)` fails with `Unknown macro: (1,`, because input is split into words at spaces.
 - **No very small numbers.** Numbers below about 2.2 × 10⁻³⁰⁸, the smallest normal double, can't be typed: `1e-320` fails with `Unknown macro: 1e-320`.
 
+## The infix front end
+
+`infix` rearranges expressions to avoid some of the `+` and `-` limits (see the README). It only sees the shape of the expression, not the size of computed values, so some cases still get through.
+
+### Literals that go second
+
+A literal is always put second in `+`, and stays second in `-`, which is right for small values but not for large ones:
+
+| Input | Translation | std | Boost | Correct |
+|---|---|---|---|---|
+| `sin(1) + 1000` | `1 sin 1000 +` | ∞ | 1000.84 | 1000.84 |
+| `sin(1) - 800` | `1 sin 800 -` | −∞ | −799.159 | −799.159 |
+| `800 - sin(1)` | `1 sin -1 * 800 +` | ∞ | 799.159 | 799.159 |
+| `sin(1) + 8i` | `1 sin (0,8) +` | 0.841471 + 1.71681i | same | 0.841471 + 8i |
+
+- **Real literals above about 709** overflow `exp` in the std build when they're second. The Boost build's range is large enough that this doesn't happen.
+- **Imaginary literals above π** wrap in both builds: 8 − 2π = 1.71681. Folding only joins an imaginary literal with a real literal, as in `3 + 8i`, which becomes the number `(3,8)`. On its own, `8i` is still a literal that goes second.
+
+### Computed values
+
+When both sides of `+` or `-` are computed, `infix` keeps the order as written, and the second one has the usual limits:
+
+| Input | Translation | Result | Correct |
+|---|---|---|---|
+| `sin(1) + 4i*2` | `1 sin (0,4) 2 * +` | 0.841471 + 1.71681i | 0.841471 + 8i |
+| `2 + 3*4i` | `3 (0,4) * 2 +` | 2 + 12i | 2 + 12i |
+
+The second works because the computed 12i is moved first and the literal 2 goes second.
+
+### Names
+
+- **`%` and `->` can't be used.** They aren't valid identifiers or `infix` operators. Write `x / 100` for `x %`, and `not(a * not(b))` for `a b ->`.
+- **The library isn't fully checked.** `infix` reads library.eml only to find each macro's argument count. It reports a macro that uses an undefined word, but not the other problems `eml` rejects, such as duplicate macros. `eml` reports those when it runs the translation.
+
+### Intentional choices
+
+- **Implicit multiplication binds tighter than `*` and `/`:** `1/2pi` is 1/(2π), and `6/2(1+2)` is 1. Some calculators read these left to right as π/2 and 9.
+- **Two numbers in a row are an error,** so `2 3` isn't read as 6.
+- **Spacing around `e` matters:** `2e-1` is 0.2, but `2e - 1` is 2e − 1.
+
 ## The program and the library
 
 - **Library location.** By default, `library.eml` is read from the current directory, so `eml` only finds it when run from the project folder. Use `--library` to give its path from anywhere else.
