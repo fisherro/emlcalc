@@ -97,3 +97,17 @@ The `test` and `test-boost` targets can be used to run the test cases.
 
 Known limits are documented in LIMITS.md
 
+## Generative AI and this experiment
+
+November 2026
+
+In my other personal projects, I'm letting coding agents write the bulk of the code. I review the code and guide the agent much like mentoring a junior programmer. With this project, though, what I wanted to get out of it meant writing the code myself. Claude reviewed the code and wrote the tests, but I wrote all the code in eml.cpp and library.eml
+
+While that did serve my purposes, it also highlighted for me how much slower the "old" way of working is. So many write-compile-fix-compile-tweak-compile cycles. I'm also not convinced that my code is significantly better than what Opus is able to write these days.
+
+I'm fairly certain that the structure of the code would have been much different if I had let Claude write it. Because my conception of how it would be structured at the start was different than what I arrived at by working through it myself. I'm confident that Claude, however, would have followed the structure I outlined for it...for good or ill. At least until *I* realized that it should be different and instructed Claude to change course.
+
+It has really brought home to me how the collaboration with coding agents really does, overall, make me more productive. Though it still needs to be a collaboration. I'm not comfortable simple "vibe coding" any but the most trivial things.
+
+(Of course, there are many issues with generative AI that I'm not addressing here. But this is not about those.)
+
