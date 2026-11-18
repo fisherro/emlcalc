@@ -189,8 +189,6 @@ let tokenize text =
         let literal = String.sub text i (j - i) in
         if j < n && text.[j] = 'i' && not (j + 1 < n && is_ident_char text.[j + 1]) then
           go (j + 1) ({ token = IMAGINARY literal; pos = i } :: tokens)
-        else if j < n && is_ident_char text.[j] then
-          syntax_error j "missing operator after %s (implicit multiplication isn't supported)" literal
         else go j ({ token = NUMBER literal; pos = i } :: tokens)
       else if is_ident_start c then
         let j = skip_while is_ident_char i in
@@ -221,8 +219,10 @@ type expr =
    left > right makes it right-associative.
      + -     (10, 11)
      * /     (20, 21)
+     2pi     (25, 26)    juxtaposition multiplies, tighter than * and /,
+                         so 1/2pi is 1/(2pi)
      unary - 30          so -x^2 is -(x^2), and -2*3 is (-2)*3
-     ^       (41, 40)    so 2^3^2 is 2^(3^2)
+     ^       (41, 40)    so 2^3^2 is 2^(3^2), and 2pi^2 is 2(pi^2)
      !       50          postfix, tightest *)
 let infix_power = function
   | "+" | "-" -> Some (10, 11)
@@ -230,6 +230,7 @@ let infix_power = function
   | "^" -> Some (41, 40)
   | _ -> None
 
+let juxtaposition_power = (25, 26)
 let prefix_power = 30
 let postfix_power = 50
 
@@ -238,14 +239,16 @@ let parse library tokens =
      never consumed, so List.hd is safe. *)
   let rest = ref tokens in
   let peek () = List.hd !rest in
-  let advance () = rest := List.tl !rest in
+  (* The last token consumed, to catch two numbers in a row. *)
+  let previous = ref END in
+  let advance () =
+    previous := (List.hd !rest).token;
+    rest := List.tl !rest
+  in
 
   (* Called where an operator or closing token should be. *)
   let unexpected { token; pos } =
     match token with
-    | NUMBER _ | IMAGINARY _ | IDENT _ | OP "(" ->
-        syntax_error pos "missing operator before %s (implicit multiplication isn't supported)"
-          (describe token)
     (* The top level accepts END, so reaching here means an open "(". *)
     | END -> syntax_error pos "missing ')'"
     | _ -> syntax_error pos "unexpected %s" (describe token)
@@ -276,8 +279,20 @@ let parse library tokens =
               advance ();
               let rhs = expression right in
               loop (operator op [ lhs; rhs ] pos)
+          | None when op = "(" && fst juxtaposition_power >= min_power -> juxtapose lhs pos
           | _ -> lhs)
+      (* Juxtaposition: an operand right after an operand multiplies. Two
+         numbers in a row are more likely a typo, so they're an error. *)
+      | NUMBER _ | IMAGINARY _ | IDENT _ when fst juxtaposition_power >= min_power -> (
+          match (!previous, token) with
+          | (NUMBER _ | IMAGINARY _), (NUMBER _ | IMAGINARY _) ->
+              syntax_error pos "missing operator between %s and %s" (describe !previous)
+                (describe token)
+          | _ -> juxtapose lhs pos)
       | _ -> lhs
+    and juxtapose lhs pos =
+      let rhs = expression (snd juxtaposition_power) in
+      loop (operator "*" [ lhs; rhs ] pos)
     in
     loop (prefix ())
 
@@ -297,21 +312,21 @@ let parse library tokens =
     | END -> syntax_error pos "unexpected end of input"
     | OP _ -> syntax_error pos "unexpected %s" (describe token)
 
-  (* pi, or sin(x), or log(b, x) *)
+  (* pi, or sin(x), or log(b, x). A "(" after a name that takes no
+     arguments isn't a call: pi(2) is pi times 2. *)
   and identifier name pos =
     let word, inputs = resolve library name pos in
-    let args =
+    if inputs = 0 then Name word
+    else
       match (peek ()).token with
-      | OP "(" -> advance (); arguments ()
-      | _ ->
-          if inputs > 0 then
-            syntax_error pos "%s takes %d argument%s: %s(...)" name inputs (plural inputs) name;
-          []
-    in
-    let given = List.length args in
-    if given <> inputs then
-      syntax_error pos "%s takes %d argument%s, not %d" name inputs (plural inputs) given;
-    if inputs = 0 then Name word else Call (word, args)
+      | OP "(" ->
+          advance ();
+          let args = arguments () in
+          let given = List.length args in
+          if given <> inputs then
+            syntax_error pos "%s takes %d argument%s, not %d" name inputs (plural inputs) given;
+          Call (word, args)
+      | _ -> syntax_error pos "%s takes %d argument%s: %s(...)" name inputs (plural inputs) name
 
   (* After the "(": zero or more comma-separated expressions, then ")". *)
   and arguments () =

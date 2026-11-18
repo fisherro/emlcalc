@@ -103,6 +103,7 @@ Like `eml`, it reads ./library.eml, or the file given with `--library`. The libr
 - Operators, from loosest to tightest:
   - `+` and `-`
   - `*` and `/`
+  - implicit multiplication (see below)
   - unary `-` and `+`
   - `^` (or `**`), which is right-associative: `2^3^2` is `2^(3^2)`
   - postfix `!` (factorial)
@@ -112,9 +113,13 @@ Like `eml`, it reads ./library.eml, or the file given with `--library`. The libr
   - `log(b, x)` is the base-b log of x
   - `root(n, x)` is the nth root of x
   - `atan2(y, x)`
-- A function with no arguments can be written with or without parentheses: `pi` or `pi()`.
+- A function with no arguments is written without parentheses: `pi`, not `pi()`.
 - An identifier can't contain `-` or `>`. In a name, `_to_` stands for `->` and `_` stands for `-`, so `deg_to_rad(180)` calls `deg->rad` and `lngamma_big(10)` calls `lngamma-big`.
-- There is no implicit multiplication. `2pi` and `2(3)` are errors; write `2*pi` and `2*(3)`.
+- Writing two operands next to each other multiplies them: `2pi`, `2 pi`, `pi e`, `2(1+i)`, `(1+2)(3+4)`, `2sin(1)`, `sin(1)cos(1)`, `3!2`. `pi(2)` is also a multiplication, because `pi` takes no arguments.
+  - Implicit multiplication binds tighter than `*` and `/`, so `1/2pi` is 1/(2π) and `6/2(1+2)` is 1. It binds looser than `^` and `!`, so `2pi^2` is 2π².
+  - Two numbers in a row, like `2 3`, are an error, since that's more likely a typo.
+  - Names must be separated: `pie` is an unknown function, not `pi e`.
+  - After a number, `e` is an exponent only when digits follow: `2e3` is 2000 and `2e-1` is 0.2, but `2e` is 2·e and `2e - 1` is 2e − 1.
 
 ### Working around eml's limits
 
@@ -132,10 +137,10 @@ These rewrites only move literal text around and never do arithmetic, so `eml-bo
 Syntax errors give the position, the line, and a caret:
 
 ```sh
-$ echo "2pi" | ./infix
-<stdin>:1:2: error: missing operator after 2 (implicit multiplication isn't supported)
-  2pi
-   ^
+$ echo "log(2, 8" | ./infix
+<stdin>:1:9: error: missing ')'
+  log(2, 8
+          ^
 ```
 
 ## Building and testing

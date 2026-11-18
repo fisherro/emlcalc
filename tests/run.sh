@@ -764,7 +764,6 @@ infix_rpn 'sin(pi / 4)' 'pi 4 / sin'
 infix_rpn 'log(2, 8)'   '2 8 log'
 infix_rpn 'root(3, 8)'  '3 8 root'
 infix_rpn 'atan2(1, 2)' '1 2 atan2'
-infix_rpn 'pi()'        'pi'
 infix_rpn 'eml(1, 1)'   '1 1 eml'
 infix_rpn 'deg_to_rad(180)'      '180 deg->rad'
 infix_rpn 'dms_to_rad(1, 2, 3)'  '1 2 3 dms->rad'
@@ -779,6 +778,34 @@ infix_value 'atan2(1, 1) * 4'         '3.14159'
 infix_value 'hypot(3, 4)'             '5'
 infix_value '5!'                      '120'
 
+# Juxtaposition multiplies. It binds tighter than * and / but looser than
+# ^ and !, so 1/2pi is 1/(2pi) and 2pi^2 is 2(pi^2).
+infix_rpn '2pi'          '2 pi *'
+infix_rpn '2 pi'         '2 pi *'
+infix_rpn 'pi e'         'pi e *'
+infix_rpn 'pi(2)'        'pi 2 *'
+infix_rpn '2(1 + i)'     '2 (1,1) *'
+infix_rpn '(1 + 2)(3 + 4)' '1 2 + 3 4 + *'
+infix_rpn '(1 + 2)3'     '1 2 + 3 *'
+infix_rpn '2sin(1)'      '1 sin 2 *'
+infix_rpn 'sin(1)cos(1)' '1 sin 1 cos *'
+infix_rpn '3!2'          '3 ! 2 *'
+infix_rpn '1/2pi'        '1 2 pi * /'
+infix_rpn '2pi^2'        'pi 2 ^ 2 *'
+infix_rpn '2^3pi'        '2 3 ^ pi *'
+infix_rpn '-2pi'         '-2 pi *'
+infix_rpn '2 * 3pi'      '3 pi * 2 *'
+infix_rpn '6/2(1 + 2)'   '6 1 2 + 2 * /'
+infix_rpn '4 i'          '(0,4)'
+infix_rpn '3 + 4 i'      '(3,4)'
+# e after a number is an exponent only when digits follow
+infix_rpn '2e'           '2 e *'
+infix_rpn '2e3'          '2e3'
+infix_rpn '2e - 1'       '2 e * 1 -'
+infix_value '1/2pi'      '0.159155'
+infix_value '6/2(1 + 2)' '1'
+infix_value '2e - 1'     '4.43656'
+
 # Errors
 infix_error ''              'unexpected end of input'
 infix_error '1 +'           'unexpected end of input'
@@ -786,9 +813,12 @@ infix_error '(1 + 2'        "missing ')'"
 infix_error 'log(2, 8'      "missing ')'"
 infix_error '1 + 2)'        "unexpected ')'"
 infix_error '1, 2'          "unexpected ','"
-infix_error '2pi'           'implicit multiplication'
-infix_error '2 pi'          'implicit multiplication'
-infix_error '2(3)'          'implicit multiplication'
+infix_error '2 3'           'missing operator between 2 and 3'
+infix_error '(1)2 3'        'missing operator between 2 and 3'
+infix_error '2 3i'          'missing operator between 2 and 3i'
+infix_error '2i 3'          'missing operator between 2i and 3'
+infix_error 'pi()'          "unexpected ')'"
+infix_error 'pie'           'unknown function pie'
 infix_error '1 $ 2'         "unexpected character '\$'"
 infix_error 'foo(1)'        'unknown function foo'
 infix_error 'sin'           'sin takes 1 argument: sin(...)'
