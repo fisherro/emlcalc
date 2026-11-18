@@ -306,6 +306,55 @@ calc_approx '0 1 ->'    '1'
 calc_approx '1 0 ->'    '0'
 calc_approx '1 1 ->'    '1'
 
+# ! approximates n! = gamma(n + 1). Expected values are from Python's
+# math.gamma, or a Lanczos approximation for complex n. Large results are
+# scaled down, because their imaginary leftovers are large in absolute terms.
+calc_approx '0 !'            '1'
+calc_approx '1 !'            '1'
+calc_approx '5 !'            '120'
+calc_approx '10 !'           '3628800'
+calc_approx '20 ! 1e18 /'    '2.43290'
+calc_approx '170 ! 1e300 /'  '7257416'
+calc_approx '0.5 !'          '0.886227'
+calc_approx '-0.5 !'         '1.77245'
+calc_approx '-3.5 !'         '-0.945309'
+calc_approx '-6.5 !'         '0.0109127'
+calc_approx '(0,1) !'        '(0.498016,-0.154950)'
+calc_approx '(1,2) !'        '(0.112294,0.323613)'
+calc_approx '10 lngamma-big' '12.8018'
+calc_approx '5 0 nCr'         '1'
+calc_approx '5 2 nCr'         '10'
+calc_approx '52 5 nCr'        '2598960'
+calc_approx '0.5 2 nCr'       '-0.125'
+
+calc_approx '200 grad->rad'          '3.14159'
+calc_approx 'pi rad->grad'           '200'
+calc_approx '100 grad->rad rad->deg' '90'
+
+# atan2 takes y, then x, as C's atan2(y, x) does. Expected values are from
+# Python's math.atan2. y = 0 with negative x is on the branch cut, so it's
+# left out.
+calc_approx '1 1 atan2'    '0.785398'
+calc_approx '1 -1 atan2'   '2.35619'
+calc_approx '-1 -1 atan2'  '-2.35619'
+calc_approx '-1 1 atan2'   '-0.785398'
+calc_approx '3 4 atan2'    '0.643501'
+calc_approx '1 0 atan2'    '1.5708'
+calc_approx '-5 0 atan2'   '-1.5708'
+calc_approx '0 1 atan2'    '0'
+
+calc_approx '2 pi 4 / polar' '(1.41421,1.41421)'
+calc_approx '1 pi polar'     '-1'
+calc_approx '3 0 polar'      '3'
+
+# Halves are on the branch cut of round, so they're left out.
+calc_approx '2.4 round'    '2'
+calc_approx '2.6 round'    '3'
+calc_approx '-2.6 round'   '-3'
+calc_approx '-0.4 round'   '0'
+calc_approx '3 round'      '3'
+calc_approx '1234.6 round' '1235'
+
 calc_approx '180 deg->rad'  '3.14159'
 calc_approx 'pi rad->deg'   '180'
 

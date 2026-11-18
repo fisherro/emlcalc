@@ -238,6 +238,73 @@ No version without a conditional avoids all of these. Writing it as |x| · √((
 - **Other inputs aren't rejected.** The formulas just compute numbers: `2 2 and` gives 4, `2 3 or` gives −1, and `0.5 not` gives 0.5.
 - **In the Boost build, results aren't exactly 0 or 1,** for the same reason that `0` isn't exact (see [Number expansion](#number-expansion)). The leftover grows slowly as operations are chained: `1 1 nand` gives 1.3 × 10⁻⁵⁰, and `1 1 nand not not not not` gives 6.1 × 10⁻⁵⁰. In the std build these are exactly 0.
 
+### `!` (factorial)
+
+`!` approximates n! = Γ(n + 1) for any complex n. Γ isn't an elementary function, and macros can't loop, so it can't be computed exactly. Instead `!` shifts the argument and uses Stirling's series:
+
+- n! = Γ(n + 9) / ((n + 1)(n + 2)···(n + 8))
+- `lngamma-big` computes ln Γ(w) ≈ (w − ½) ln w − w + ½ ln 2π + 1/(12w) − 1/(360w³) + 1/(1260w⁵), with w = n + 9.
+
+The [`+` and `-` limits](#subtraction-and-addition) don't apply. Each n + k has a constant as its second argument. The other second arguments, −w and the ln of the product, are in the exponent of the final `exp`, where an error of 2πi has no effect. Taking the ln of the product, rather than dividing by it at the end, also keeps Γ(n + 9) from overflowing before n! does.
+
+**Accuracy.** For Re n above about −7, results match Γ(n + 1) to the 6 displayed digits, including fractions and complex numbers: `0.5 !` gives 0.886227, and `(0,1) !` gives 0.498016 − 0.15495i. Integers aren't exact, only correct to the display.
+
+**Re n below about −7.** w = n + 9 becomes too small for the series to be accurate:
+
+| Input | Result | Correct |
+|---|---|---|
+| `-6.5 !` | 0.0109127 | 0.0109127 |
+| `-7.5 !` | −0.00167891 | −0.00167887 |
+| `-8.5 !` | 0.000227554 | 0.000223849 |
+| `-9.5 !` | −5.18129 × 10⁻⁵ | −2.63352 × 10⁻⁵ |
+
+Fixing this needs the reflection formula Γ(z)Γ(1 − z) = π / sin(πz) for those inputs, and choosing between the two formulas needs a conditional.
+
+**Negative integers** are poles, but the result is a meaningless large number rather than infinity: `-1 !` gives 0.5 − 8.2 × 10¹⁵ i in the std build and 1.1 × 10⁴⁸ − 8.1 × 10⁴⁸ i in Boost.
+
+**Overflow.** 171! is above the largest double, so in the std build `171 !` gives infinity + infinity·i. The Boost build continues: `171 !` gives 1.24102 × 10³⁰⁹.
+
+**Large imaginary leftovers.** The leftover is about 10⁻¹⁸ relative to the result, so it shows for large n: `20 !` gives 2.4329 × 10¹⁸ + 2.1i, and `170 !` has an imaginary part of about 10²⁸⁸.
+
+**Size.** `5 !` expands to about 6,800 words.
+
+### `nCr`
+
+`n r nCr` computes n! / (r! (n − r)!) with three uses of `!`, so it inherits the [`!` limits](#-factorial) for n, r and n − r:
+
+- **All three must have a real part above about −7.** Within that, fractional n works: `0.5 2 nCr` gives −0.125.
+- **In the std build, n can't be above 170,** because n! overflows even when the result is small: `200 2 nCr` gives NaN instead of 19900. The Boost build gives 19900.
+- **Size.** Each `!` expands to about 6,800 words, so `nCr` expands to about 20,000.
+
+### `atan2`
+
+`y x atan2` gives the angle of the point (x, y), as C's `atan2(y, x)` does. It computes −i · ln((x + iy) / r), with r from `hypot`, so `ln` picks the quadrant and no conditional is needed. Dividing by r before adding keeps the imaginary part that goes through `+` between −1 and 1, so it can't wrap. It's meant for real x and y.
+
+- **The negative x axis** (y = 0, x < 0) is the branch cut of `ln`, so the result there can be π or −π: `0 -1 atan2` gives π in both builds, but `-1e-20 -1 atan2` gives π in the std build and −π in Boost.
+- **`0 0 atan2`** is undefined. It gives infinity − infinity·i in the std build, and a meaningless number in Boost.
+- **In the std build, |y| must be below about 26.6,** because `hypot` gets y first (see [`hypot`](#half-sigma-avg-and-hypot)): `1 27 atan2` gives 0.0370201, but `27 1 atan2` gives infinity − infinity·i. The Boost build gives 1.53378.
+
+### `polar`
+
+`r θ polar` gives r · e^(iθ). It has no `+` or `-` limits. θ only goes through `*` and `exp`, so any real angle works.
+
+### `round`
+
+`round` rounds a real number to the nearest whole number without a conditional, using the wraparound of `ln` the same way `wrap360` does. It subtracts ln(e^(2πix)) / (2πi), which `ln` wraps into (−½, ½].
+
+- **Halves are on the branch cut,** so they can round either way. `2.5 round` gives 2 and `-0.5 round` gives 0, both rounding toward zero, but that isn't guaranteed.
+- **Large numbers lose precision.** The part subtracted from x picks up rounding error as x grows, so the result is no longer a whole number. For x = 10ᵏ + 0.6, the subtracted part should be −0.4:
+
+| x | std | Boost |
+|---|---|---|
+| 10⁶ + 0.6 | −0.4 | −0.4 |
+| 10⁹ + 0.6 | −0.399995 | −0.4 |
+| 10¹² + 0.6 | −0.390976 | −0.4 |
+| 10¹⁴ + 0.6 | −0.193224 | −0.4 |
+
+  In the std build it gives infinity from about 10²⁰. The Boost build is still correct at 10⁴⁰, and gives infinity by 10⁶⁰.
+- **Only for real numbers.** For complex z, the subtracted part is (Re z wrapped) + i · Im z. That goes through `-` as the second argument, so the result is the rounded real part only while |Im z| is below π: `(2.6,3) round` gives 3, but `(2.6,5) round` gives 3 + 6.28319i. For large imaginary parts it overflows: `(2.6,200) round` gives infinity in the std build.
+
 ### `log` and `log10`
 
 `b x log` computes ln x / ln b, and `log10` is `10 swap log`. Away from the two problem inputs below, they match Python's `cmath`, including negative and complex inputs: `-100 log10` gives 2 + 1.36438i.

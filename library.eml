@@ -45,6 +45,8 @@ deg->rad: pi * 180 /
 rad->deg: 180 * pi /
 wrap360: 180 - 1 neg * deg->rad i * exp ln i / rad->deg 180 swap -
 dms->rad: 60 / + 60 / over sign * + wrap360 deg->rad
+grad->rad: pi * 200 /
+rad->grad: 200 * pi /
 
 cos: dup i * exp swap i neg * exp + 1 1 + /
 sin: dup i * exp swap i neg * exp - 1 1 + i * /
@@ -78,4 +80,13 @@ arctanh: dup 1 + swap 1 - 1 neg * / ln 2 /
 arccoth: dup 1 + swap 1 - / ln 2 /
 arcsech: inv arccosh
 arccsch: dup 1 swap / swap sq 1 swap / 1 + sqrt + ln
+
+# Approximate factorial
+lngamma-big: dup ln over 0.5 - * over - 2 pi * ln 2 / + swap inv dup sq dup 1260 / 1 360 / swap - * 1 12 / swap - * +
+!: dup 1 + over 2 + * over 3 + * over 4 + * over 5 + * over 6 + * over 7 + * over 8 + * swap 9 + lngamma-big swap ln - exp
+
+atan2: over over hypot rot over / i * rot rot / swap + ln i /
+polar: i * exp *
+round: dup 2 pi * i * * exp ln 2 pi * i * / -
+nCr: over over - ! rot ! rot ! rot * /
 
