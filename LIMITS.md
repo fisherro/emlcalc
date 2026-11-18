@@ -354,6 +354,16 @@ Fixing this needs the reflection formula Γ(z)Γ(1 − z) = π / sin(πz) for th
 - **Leftover imaginary parts.** Taking ln of a negative number goes through iπ, which leaves a tiny imaginary part, often around 10⁻¹⁶: `-2 3 *` gives −6 + 7.3 × 10⁻¹⁶ i, and `i` gives 6.1 × 10⁻¹⁷ + i.
 - **Errors grow with nesting.** Each layer of `exp` and `ln` adds rounding error: `-8 3 ^` gives −512 + 1.1 × 10⁻¹² i.
 - **The display hides most of it.** Results are printed to 6 significant digits, so errors in the real part rarely show.
+- **`--clean` hides leftover parts,** but it can't tell rounding error from a genuinely tiny value. It prints a part as 0 when it's below 10,000ε times the size of the number, or below 1,000ε, where ε is the epsilon of the number type:
+
+  | | ε | Floor (1,000ε) |
+  |---|---|---|
+  | std | 2.2 × 10⁻¹⁶ | 2.2 × 10⁻¹³ |
+  | Boost | 5.3 × 10⁻⁵¹ | 5.3 × 10⁻⁴⁸ |
+
+  - **Tiny results print as 0.** In the std build, `1e-13` with `--clean` gives 0, and so does `-40 sigma` (4.2 × 10⁻¹⁸). The Boost build shows both correctly, since its floor is far smaller.
+  - **Without a floor, sin π wouldn't be 0.** `pi sin` is about 1.2 × 10⁻¹⁶ in the std build and 5 × 10⁻⁴⁹ in Boost, which is noise around a true 0 that looks just like a tiny value. The floor is what makes `--clean` print 0 for it.
+  - **Errors larger than the tolerance stay.** `--clean` only removes noise, not the larger errors described elsewhere in this file, such as `round` for large inputs or the wraparound in `+` and `-`.
 
 ## Number expansion
 

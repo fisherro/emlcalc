@@ -7,6 +7,7 @@
 #include <functional>
 #include <iostream>
 #include <istream>
+#include <limits>
 #include <optional>
 #include <ostream>
 #include <ranges>
@@ -42,9 +43,10 @@ constexpr int EXIT_USAGE{2};
 
 struct options_type {
     std::vector<std::string_view> files;
+    std::string library;
     bool strict{false};
     bool expand{false};
-    std::string library;
+    bool clean{false};
 };
 
 struct usage_error: std::runtime_error {
@@ -56,6 +58,7 @@ R"(Usage: eml [--strict] [--expand] [--library <file>] [<file> ...]
 Reads an RPN expression from standard input or given files.
   -s, --strict  Only accepts 1, eml, and stack operations
   -e, --expand  Transforms expression for use with --strict
+  -c, --clean   Round small values to zero
   -l, --library File path to the macro library
   -h, --help    Prints this text
 )";
@@ -93,6 +96,8 @@ options_type parse_options(std::span<const std::string_view> args)
         } else if (match('h', "help")) {
             std::cout << help_text;
             std::exit(EXIT_SUCCESS);
+        } else if (match('c', "clean")) {
+            options.clean = true;
         } else if (arg.starts_with("-")) {
             throw usage_error{std::format("Unrecognized option: {}", arg)};
         } else {
@@ -114,8 +119,18 @@ bool is_whitespace(unsigned char c) { return std::isspace(c); }
 
 bool is_digit(unsigned char c) { return std::isdigit(c); }
 
-void print_number(std::ostream& out, const number_type& n)
+void print_number(std::ostream& out, number_type n, bool clean)
 {
+    if (clean) {
+        using value_type = number_type::value_type;
+        using limits = std::numeric_limits<value_type>;
+        static const value_type tolerance{10'000 * limits::epsilon()};
+        static const value_type floor{1'000 * limits::epsilon()};
+        value_type limit{tolerance * abs(n)};
+        if (limit < floor) limit = floor;
+        if (abs(n.real()) < limit) n.real(0);
+        if (abs(n.imag()) < limit) n.imag(0);
+    }
     if (0 == n.imag()) {
         out << n.real();
     } else {
@@ -124,10 +139,10 @@ void print_number(std::ostream& out, const number_type& n)
 }
 
 //NOTE: We intentionally copy the_stack instead of taking it by reference.
-void print_stack(std::ostream& out, number_stack the_stack)
+void print_stack(std::ostream& out, number_stack the_stack, bool clean)
 {
     while (not the_stack.empty()) {
-        print_number(out, the_stack.top());
+        print_number(out, the_stack.top(), clean);
         out << '\n';
         the_stack.pop();
     }
@@ -542,11 +557,11 @@ void go(const options_type& options, std::istream& in, std::ostream& out)
                 message << "Empty stack";
             } else {
                 message << "Too many values on the stack\n";
-                print_stack(message, the_stack);
+                print_stack(message, the_stack, options.clean);
             }
             throw_string(message.str());
         }
-        print_number(out, the_stack.top());
+        print_number(out, the_stack.top(), options.clean);
         out << '\n';
     }
 }

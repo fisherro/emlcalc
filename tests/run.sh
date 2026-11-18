@@ -603,6 +603,44 @@ check_error  "$root" 'file with an error' '' 'Too many values on the stack' \
 calc '1'       '1'
 calc '1 1 eml' '2.71828'
 
+### --clean ###
+# --clean prints a part as 0 when it's smaller than 10,000 epsilon times the
+# size of the number, or 1,000 epsilon, whichever is larger. These outputs
+# are the same in both builds.
+
+clean()       { check_output "$root" "--clean '$1'" "$1" "$2" --clean; }
+
+clean '2 10 ^'       '1024'
+clean '52 5 nCr'     '2.59896e+06'
+clean '170 !'        '7.25742e+306'
+clean '(0,4) -1 *'   '(0,-4)'
+clean '(0,1) sq'     '-1'
+clean 'pi sin'       '0'
+clean '1 ln'         '0'
+clean '0 -1 *'       '0'
+# Parts that aren't noise are kept
+clean '(1,2) exp'    '(-1.1312,2.47173)'
+clean '-1 ln'        '(0,3.14159)'
+clean '1e-9'         '1e-09'
+clean '-15 sigma'    '3.05902e-07'
+check_output "$root" '-c' '2 10 ^' '1024' -c
+check_output "$root" '--clean with --strict' '1 1 eml' '2.71828' --strict --clean
+# The stack shown with "Too many values" is cleaned too
+check_error "$root" '--clean, too many values' '2 10 ^ 1' \
+    "$(printf 'stack\n1\n1024')" --clean
+
+# The floor is 1,000 epsilon: about 2e-13 for std::complex<double> and 5e-48
+# for Boost. The std build gives exactly 0 for "1 ln"; Boost doesn't.
+run_eml "$root" '1 ln'
+if [ "$out" = '0' ]; then
+    clean '1e-13'     '0'
+    clean '-40 sigma' '0'
+else
+    clean '1e-13'     '1e-13'
+    clean '-40 sigma' '4.24835e-18'
+    clean '1e-48'     '0'
+fi
+
 ### Library loading ###
 
 use_library 'a: 1 dup\nb: a eml\n'

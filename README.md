@@ -45,6 +45,21 @@ $ echo "1 ln" | ./eml
 0
 ```
 
+## Cleaning up rounding error
+
+Results often have tiny leftover parts from rounding error, because every calculation goes through `exp` and `ln`. For example, a negative number usually gets a tiny imaginary part. The `--clean` (`-c`) option prints such parts as 0. It works in normal and strict mode, and has no effect with `--expand`.
+
+Example:
+
+```sh
+$ echo "2 10 ^" | ./eml
+(1024,3.18585e-13)
+$ echo "2 10 ^" | ./eml --clean
+1024
+```
+
+A part is treated as rounding error when it's smaller than 10,000 times the number type's epsilon multiplied by the size of the whole number, or smaller than 1,000 times epsilon, whichever is larger. Both limits come from `std::numeric_limits`, so they scale with the precision of the build. A genuinely tiny result is also printed as 0: in the std build that's anything below about 2 × 10⁻¹³.
+
 ## Reading files
 
 If `eml` is given file paths on the command line, it will read from them instead of standard input. Each file is a separate evaluation (with its own stack).
